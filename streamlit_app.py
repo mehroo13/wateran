@@ -23,7 +23,7 @@ PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 EPOCH_RANGE = list(range(1, 1001)) # Epoch range for slider
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected get_config - use .inputs and .outputs) --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected get_config - use stored attributes) --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -66,6 +66,8 @@ def custom_loss(inputs, y_true, y_pred):
 class PINNModel(tf.keras.Model):
     def __init__(self, inputs, output, **kwargs):
         super(PINNModel, self).__init__(inputs=inputs, outputs=output, **kwargs)
+        self._input_tensor = inputs  # Store input tensor as a class attribute
+        self._output_tensor = output # Store output tensor as a class attribute
 
 
     def train_step(self, data):
@@ -83,8 +85,8 @@ class PINNModel(tf.keras.Model):
     def get_config(self):
         config = super().get_config()
         config.update({ # Add input and output tensor configs to the serialized config
-            'inputs': tf.keras.saving.serialize_keras_object(self.inputs), # Use self.inputs (plural) from Keras Model
-            'output': tf.keras.saving.serialize_keras_object(self.outputs)  # Use self.outputs (plural) from Keras Model
+            'inputs': tf.keras.saving.serialize_keras_object(self._input_tensor), # Use the stored class attribute
+            'output': tf.keras.saving.serialize_keras_object(self._output_tensor)  # Use the stored class attribute
         })
         return config
 
