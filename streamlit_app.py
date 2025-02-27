@@ -23,7 +23,7 @@ PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 EPOCH_RANGE = list(range(1, 1001)) # Epoch range for slider
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Simplified __init__) --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected get_config) --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -83,8 +83,8 @@ class PINNModel(tf.keras.Model):
     def get_config(self):
         config = super().get_config()
         config.update({ # Add input and output tensor configs to the serialized config
-            'inputs': tf.keras.saving.serialize_keras_object(self.inputs), # Serialize input tensor
-            'output': tf.keras.saving.serialize_keras_object(self.output)  # Serialize output tensor
+            'inputs': tf.keras.saving.serialize_keras_object(self.input), # Use self.input from Keras Model
+            'output': tf.keras.saving.serialize_keras_object(self.output)  # Use self.output from Keras Model
         })
         return config
 
