@@ -22,7 +22,7 @@ EPOCHS = 500  # Default epochs, user can adjust in UI
 PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (No Changes from provided code) --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -33,15 +33,26 @@ def water_balance_loss(y_true, y_pred, inputs):
 class Attention(tf.keras.layers.Layer):
     def __init__(self):
         super(Attention, self).__init__()
+
     def build(self, input_shape):
         self.W = self.add_weight(name="att_weight", shape=(input_shape[-1], input_shape[-1]), initializer="glorot_uniform", trainable=True)
         self.b = self.add_weight(name="att_bias", shape=(input_shape[-1],), initializer="zeros", trainable=True)
+
     def call(self, inputs):
         score = tf.nn.tanh(tf.matmul(inputs, self.W) + self.b)
         attention_weights = tf.nn.softmax(score, axis=1)
         context_vector = attention_weights * inputs
         context_vector = tf.reduce_sum(context_vector, axis=1)
         return context_vector
+
+    def get_config(self): # Add get_config for serialization
+        config = super().get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config): # Add from_config for deserialization
+        return cls(**config)
+
 
 def custom_loss(inputs, y_true, y_pred):
     mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
@@ -52,6 +63,9 @@ def custom_loss(inputs, y_true, y_pred):
 
 
 class PINNModel(tf.keras.Model):
+    def __init__(self, inputs, output): # Add inputs and outputs to constructor for get_config/from_config
+        super(PINNModel, self).__init__(inputs=inputs, outputs=output)
+
     def train_step(self, data):
         X, y = data
         with tf.GradientTape() as tape:
@@ -60,8 +74,17 @@ class PINNModel(tf.keras.Model):
         gradients = tape.gradient(loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_weights))
         return {"loss": loss}
+
     def call(self, inputs):
         return super().call(inputs)
+
+    def get_config(self): # Add get_config for serialization
+        config = super().get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config): # Add from_config for deserialization
+        return cls(**config) # **config will be empty, so it will call __init__ with no args
 
 
 # Streamlit App Title
@@ -156,9 +179,6 @@ if uploaded_file:
         lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.8, patience=20, verbose=1)
         early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=250, min_delta=0.001, restore_best_weights=True)
 
-        # Debugging - Print custom_objects before saving
-        custom_objects_save_debug = {'Attention': Attention, 'PINNModel': PINNModel, 'custom_loss': custom_loss}
-        print(f"Custom objects being SAVED: {custom_objects_save_debug}")
 
         # Train the model
         history = model.fit(X_train_dynamic, y_train, epochs=epochs, batch_size=BATCH_SIZE, validation_data=(X_test_dynamic, y_test), verbose=1,
@@ -178,12 +198,8 @@ if uploaded_file:
             st.error(f"🚨 Error: Model file '{model_path}' not found! Please train the model first.")
             st.stop()
 
-        # Debugging - Print custom_objects before loading
-        custom_objects_load_debug = {'Attention': Attention, 'PINNModel': PINNModel, 'custom_loss': custom_loss}
-        print(f"Custom objects being LOADED: {custom_objects_load_debug}")
-
         # Load the trained model
-        model = tf.keras.models.load_model(model_path, custom_objects=custom_objects_load_debug) # custom_objects for custom layers/loss
+        model = tf.keras.models.load_model(model_path, custom_objects={'Attention': Attention, 'PINNModel': PINNModel, 'custom_loss': custom_loss}) # custom_objects for custom layers/loss
         y_pred = model.predict(X_test_dynamic)
 
 
