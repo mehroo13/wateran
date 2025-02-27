@@ -17,10 +17,12 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 st.title("🌊 Streamflow Prediction Web App")
 
 # Upload Dataset
-uploaded_file = st.file_uploader("📂 Upload an Excel file", type=["xlsx"])
+uploaded_file = st.file_uploader("🗂 Upload an Excel file", type=["xlsx"])
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    st.write("\U0001F4CA Preview of Dataset:", df.head())
+
+    # Display dataset preview
+    st.write("📊 Preview of Dataset:", df.head())
 
     # Handle Date column
     if 'Date' in df.columns:
@@ -49,60 +51,63 @@ if uploaded_file:
     y = scaler_y.fit_transform(df[target].values.reshape(-1, 1))
 
     # Train-Test Split (User-defined)
-    train_split = st.slider("\U0001F3AF Select Training Data Percentage", 50, 90, 80) / 100
+    train_split = st.slider("🎯 Select Training Data Percentage", 50, 90, 80) / 100
     X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=train_split, shuffle=False)
-    st.write(f"\U0001F4CC Train Data: {len(X_train)}, Test Data: {len(X_test)}")
+    st.write(f"📌 Train Data: {len(X_train)}, Test Data: {len(X_test)}")
 
     # Model Selection
-    model_choice = st.selectbox("\U0001F4E1 Choose a Model", ["GRU", "Random Forest", "XGBoost"])
-
-    # Allow user to set number of epochs for GRU
+    model_choice = st.selectbox("📡 Choose a Model", ["GRU", "Random Forest", "XGBoost"])
+    
+    # User-defined epochs/estimators
     if model_choice == "GRU":
-        epochs = st.slider("\U0001F4BB Select Number of Epochs", 10, 500, 100)
+        epochs = st.number_input("⏳ Set Number of Epochs", min_value=10, max_value=500, value=100, step=10)
+    else:
+        estimators = st.number_input("🎨 Set Number of Estimators", min_value=10, max_value=500, value=100, step=10)
 
-    if st.button("\U0001F680 Train Model"):
+    if st.button("🚀 Train Model"):
         start_time = time.time()
 
         if model_choice == "GRU":
-            X_train_reshaped = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
-            X_test_reshaped = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
+            # Reshape for GRU
+            X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
+            X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
+            # Define GRU Model
             model = tf.keras.Sequential([
-                tf.keras.layers.GRU(128, return_sequences=True, input_shape=(1, X_train.shape[1])),
+                tf.keras.layers.GRU(128, return_sequences=True, input_shape=(1, X_train.shape[2])),
                 tf.keras.layers.Dense(256, activation='relu'),
                 tf.keras.layers.Dense(1)
             ])
+            
             model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001), loss='mae')
-            model.fit(X_train_reshaped, y_train, epochs=epochs, batch_size=32, validation_data=(X_test_reshaped, y_test), verbose=1)
-            model.save("GRU_model.h5")
-
+            
+            # Train the model
+            model.fit(X_train, y_train, epochs=epochs, batch_size=32, validation_data=(X_test, y_test), verbose=1)
+            model.save("GRU_model.keras")
+        
         elif model_choice == "Random Forest":
-            model = RandomForestRegressor(n_estimators=100)
+            model = RandomForestRegressor(n_estimators=estimators)
             model.fit(X_train, y_train.ravel())
             joblib.dump(model, "RF_model.pkl")
 
         elif model_choice == "XGBoost":
-            model = XGBRegressor(n_estimators=100)
+            model = XGBRegressor(n_estimators=estimators)
             model.fit(X_train, y_train.ravel())
             joblib.dump(model, "XGB_model.pkl")
 
         training_time = time.time() - start_time
         st.write(f"✅ Model Trained in {training_time:.2f} seconds!")
-
-    if st.button("\U0001F50D Test Model"):
+    
+    if st.button("🔍 Test Model"):
         test_start_time = time.time()
-
-        # Load the correct model
-        if model_choice == "Random Forest":
-            model = joblib.load("RF_model.pkl")
-        elif model_choice == "XGBoost":
-            model = joblib.load("XGB_model.pkl")
-        elif model_choice == "GRU":
-            model = tf.keras.models.load_model("GRU_model.h5")
-            X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
-
-        # Predict
-        y_pred = model.predict(X_test)
+        
+        if model_choice == "GRU":
+            model = tf.keras.models.load_model("GRU_model.keras")
+            y_pred = model.predict(X_test)
+        else:
+            model = joblib.load(f"{model_choice}_model.pkl")
+            y_pred = model.predict(X_test)
+        
         y_pred = scaler_y.inverse_transform(y_pred.reshape(-1, 1))
         y_actual = scaler_y.inverse_transform(y_test.reshape(-1, 1))
 
@@ -110,7 +115,10 @@ if uploaded_file:
         rmse = np.sqrt(mean_squared_error(y_actual, y_pred))
         mae = mean_absolute_error(y_actual, y_pred)
         r2 = r2_score(y_actual, y_pred)
+        test_time = time.time() - test_start_time
+        
         st.write(f"📉 RMSE: {rmse:.4f}, MAE: {mae:.4f}, R²: {r2:.4f}")
+        st.write(f"⏳ Testing Time: {test_time:.2f} seconds!")
 
         # Plot Predictions
         fig, ax = plt.subplots(figsize=(10, 5))
