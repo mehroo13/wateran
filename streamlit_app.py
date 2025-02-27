@@ -50,9 +50,9 @@ def custom_loss(inputs, y_true, y_pred):
     physics_loss = water_balance_loss(y_true, y_pred, inputs)
     return weighted_mse_loss + PHYSICS_LOSS_WEIGHT * physics_loss
 
-inputs_PINN = tf.keras.Input(shape=(None, None, None)) # Shape will be dynamically defined during data processing
-# Corrected line: Specify input_shape in the first layer
-x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(GRU_UNITS, return_sequences=True, input_shape=(1, None)))(inputs_PINN)
+# Revised inputs_PINN definition:
+inputs_PINN = tf.keras.Input(shape=(1, None)) # Shape now reflects the input to GRU directly
+x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(GRU_UNITS, return_sequences=True))(inputs_PINN) # Removed input_shape here, as defined in Input
 x = Attention()(x)
 x = tf.keras.layers.Dense(DENSE_UNITS_1, activation='relu')(x)
 x = tf.keras.layers.BatchNormalization()(x)
@@ -141,6 +141,7 @@ if uploaded_file:
     train_split = st.slider("🎯 Select Training Data Percentage", 50, 90, 80) / 100
     X_train_dynamic, X_test_dynamic, y_train, y_test = train_test_split(X_dynamic_scaled, y_scaled, train_size=train_split, shuffle=False)
     st.write(f"📌 Train Data: {len(X_train_dynamic)}, Test Data: {len(X_test_dynamic)}")
+    st.write(f"Shape of X_train_dynamic: {X_train_dynamic.shape}") # Debug print
 
 
     if st.button("🚀 Train Model"):
@@ -148,7 +149,7 @@ if uploaded_file:
 
         # Define PINN-GRU Model
         model = PINNModel(inputs_PINN, output_PINN) # Use pre-defined PINNModel and inputs/outputs
-        # No need to build model here as input_shape is defined in the first layer
+        # No need to build model here as input_shape is defined in Input
 
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss='mae', run_eagerly=True) # Keep run_eagerly=True for custom loss
         lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.8, patience=20, verbose=1)
