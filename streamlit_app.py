@@ -22,7 +22,7 @@ EPOCHS = 500  # Default epochs, user can adjust in UI
 PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected __init__ methods) --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected __init__ and from_config) --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -31,8 +31,8 @@ def water_balance_loss(y_true, y_pred, inputs):
     return tf.reduce_mean(tf.square(balance_term))
 
 class Attention(tf.keras.layers.Layer):
-    def __init__(self, **kwargs): # <--- ADD **kwargs here
-        super(Attention, self).__init__(**kwargs) # <--- Pass **kwargs to superclass __init__
+    def __init__(self, **kwargs):
+        super(Attention, self).__init__(**kwargs)
 
     def build(self, input_shape):
         self.W = self.add_weight(name="att_weight", shape=(input_shape[-1], input_shape[-1]), initializer="glorot_uniform", trainable=True)
@@ -63,9 +63,8 @@ def custom_loss(inputs, y_true, y_pred):
 
 
 class PINNModel(tf.keras.Model):
-    def __init__(self, inputs, output, **kwargs): # <--- ADD **kwargs here, and inputs, output
-        super(PINNModel, self).__init__(inputs=inputs, outputs=output, **kwargs) # <--- Pass **kwargs to superclass __init__
-        # Note: Pass inputs and outputs to the constructor as well
+    def __init__(self, inputs, output, **kwargs):
+        super(PINNModel, self).__init__(inputs=inputs, outputs=output, **kwargs)
 
 
     def train_step(self, data):
@@ -86,7 +85,7 @@ class PINNModel(tf.keras.Model):
 
     @classmethod
     def from_config(cls, config):
-        return cls.from_config(config)
+        return cls(**config) # <--- CORRECTED from_config - no recursion!
 
 
 # Streamlit App Title
