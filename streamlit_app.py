@@ -51,7 +51,8 @@ def custom_loss(inputs, y_true, y_pred):
     return weighted_mse_loss + PHYSICS_LOSS_WEIGHT * physics_loss
 
 inputs_PINN = tf.keras.Input(shape=(None, None, None)) # Shape will be dynamically defined during data processing
-x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(GRU_UNITS, return_sequences=True))(inputs_PINN)
+# Corrected line: Specify input_shape in the first layer
+x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(GRU_UNITS, return_sequences=True, input_shape=(1, None)))(inputs_PINN)
 x = Attention()(x)
 x = tf.keras.layers.Dense(DENSE_UNITS_1, activation='relu')(x)
 x = tf.keras.layers.BatchNormalization()(x)
@@ -147,7 +148,7 @@ if uploaded_file:
 
         # Define PINN-GRU Model
         model = PINNModel(inputs_PINN, output_PINN) # Use pre-defined PINNModel and inputs/outputs
-        model.build(input_shape=(None, 1, X_train_dynamic.shape[2])) # Build model with dynamic input shape
+        # No need to build model here as input_shape is defined in the first layer
 
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss='mae', run_eagerly=True) # Keep run_eagerly=True for custom loss
         lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.8, patience=20, verbose=1)
