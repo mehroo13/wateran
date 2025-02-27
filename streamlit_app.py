@@ -5,6 +5,8 @@ import tensorflow as tf
 import time
 import joblib
 import os
+import seaborn as sns
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
@@ -116,11 +118,43 @@ if uploaded_file:
             st.write(f"📉 RMSE: {rmse:.4f}, MAE: {mae:.4f}, R²: {r2:.4f}")
             st.write(f"⏳ Testing Time: {test_time:.2f} seconds!")
 
+            # Additional Hydrology Metrics
+            def calculate_nse(observed, predicted):
+                """Nash-Sutcliffe Efficiency."""
+                numerator = np.sum((observed - predicted) ** 2)
+                denominator = np.sum((observed - np.mean(observed)) ** 2)
+                return 1 - (numerator / denominator)
+
+            def calculate_kge(observed, predicted):
+                """Kling-Gupta Efficiency."""
+                r = np.corrcoef(observed.flatten(), predicted.flatten())[0, 1]
+                beta = np.mean(predicted) / np.mean(observed)
+                gamma = (np.std(predicted) / np.mean(predicted)) / (np.std(observed) / np.mean(observed))
+                return 1 - np.sqrt((r - 1) ** 2 + (beta - 1) ** 2 + (gamma - 1) ** 2)
+
+            def calculate_pbias(observed, predicted):
+                """Percent Bias."""
+                return ((np.sum(predicted - observed) / np.sum(observed)) * 100)
+
+            nse = calculate_nse(y_actual, y_pred)
+            kge = calculate_kge(y_actual, y_pred)
+            pbias = calculate_pbias(y_actual, y_pred)
+
+            st.write(f"📊 Nash-Sutcliffe Efficiency (NSE): {nse:.4f}")
+            st.write(f"📊 Kling-Gupta Efficiency (KGE): {kge:.4f}")
+            st.write(f"📊 Percent Bias (PBIAS): {pbias:.4f}%")
+
             # Plot Predictions
-            st.line_chart({"Actual": y_actual.flatten(), "Predicted": y_pred.flatten()})
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(y_actual, label="Actual", color="blue")
+            ax.plot(y_pred, label="Predicted", color="orange")
+            ax.set_title("📈 Actual vs. Predicted Streamflow")
+            ax.set_xlabel("Time")
+            ax.set_ylabel("Streamflow (m³/s)")
+            ax.legend()
+            st.pyplot(fig)
 
             # Save Predictions
             results_df = pd.DataFrame({"Actual": y_actual.flatten(), "Predicted": y_pred.flatten()})
             results_df.to_csv("streamflow_predictions.csv", index=False)
             st.download_button("📥 Download Predictions", "streamflow_predictions.csv", "text/csv")
-
