@@ -22,7 +22,7 @@ EPOCHS = 500  # Default epochs, user can adjust in UI
 PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (No Changes from provided code) --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -156,6 +156,9 @@ if uploaded_file:
         lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.8, patience=20, verbose=1)
         early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=250, min_delta=0.001, restore_best_weights=True)
 
+        # Debugging - Print custom_objects before saving
+        custom_objects_save_debug = {'Attention': Attention, 'PINNModel': PINNModel, 'custom_loss': custom_loss}
+        print(f"Custom objects being SAVED: {custom_objects_save_debug}")
 
         # Train the model
         history = model.fit(X_train_dynamic, y_train, epochs=epochs, batch_size=BATCH_SIZE, validation_data=(X_test_dynamic, y_test), verbose=1,
@@ -175,8 +178,12 @@ if uploaded_file:
             st.error(f"🚨 Error: Model file '{model_path}' not found! Please train the model first.")
             st.stop()
 
+        # Debugging - Print custom_objects before loading
+        custom_objects_load_debug = {'Attention': Attention, 'PINNModel': PINNModel, 'custom_loss': custom_loss}
+        print(f"Custom objects being LOADED: {custom_objects_load_debug}")
+
         # Load the trained model
-        model = tf.keras.models.load_model(model_path, custom_objects={'Attention': Attention, 'PINNModel': PINNModel, 'custom_loss': custom_loss}) # custom_objects for custom layers/loss
+        model = tf.keras.models.load_model(model_path, custom_objects=custom_objects_load_debug) # custom_objects for custom layers/loss
         y_pred = model.predict(X_test_dynamic)
 
 
