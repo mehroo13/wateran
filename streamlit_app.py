@@ -101,11 +101,22 @@ if uploaded_file:
     if st.button("🔍 Test Model"):
         test_start_time = time.time()
         
+        # Check if the model file exists before loading
         if model_choice == "GRU":
-            model = tf.keras.models.load_model("GRU_model.keras")
+            model_path = "GRU_model.keras"
+        else:
+            model_path = f"{model_choice}_model.pkl"
+
+        if not os.path.exists(model_path):
+            st.error(f"🚨 Error: Model file '{model_path}' not found! Please train the model first.")
+            st.stop()
+
+        # Load the trained model
+        if model_choice == "GRU":
+            model = tf.keras.models.load_model(model_path)
             y_pred = model.predict(X_test)
         else:
-            model = joblib.load(f"{model_choice}_model.pkl")
+            model = joblib.load(model_path)
             y_pred = model.predict(X_test)
         
         y_pred = scaler_y.inverse_transform(y_pred.reshape(-1, 1))
