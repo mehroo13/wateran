@@ -23,7 +23,7 @@ PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 EPOCH_RANGE = list(range(1, 1001)) # Epoch range for slider
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected get_config - Model definition in __init__) --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected get_config - Tuple input_shape) --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -71,10 +71,10 @@ class PINNModel(tf.keras.Model):
         self.dense_units_2 = dense_units_2
         self.dense_units_3 = dense_units_3
         self.dropout_rate = dropout_rate
-        self.input_shape_arg = input_shape # Store input_shape
+        self.input_shape_arg = tuple(input_shape) # Ensure input_shape is stored as a tuple
 
         # Define layers in __init__
-        self.inputs_PINN = tf.keras.layers.Input(shape=input_shape) # Input layer now defined here, using input_shape argument
+        self.inputs_PINN = tf.keras.layers.Input(shape=self.input_shape_arg) # Use stored tuple input_shape
         self.bidirectional_gru = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(gru_units, return_sequences=True))
         self.attention = Attention()
         self.dense1 = tf.keras.layers.Dense(dense_units_1, activation='relu')
@@ -108,13 +108,13 @@ class PINNModel(tf.keras.Model):
             'dense_units_2': self.dense_units_2,
             'dense_units_3': self.dense_units_3,
             'dropout_rate': self.dropout_rate,
-            'input_shape': self.input_shape_arg,
+            'input_shape': self.input_shape_arg # Serialize input_shape which is now a tuple
         })
         return config
 
     @classmethod
     def from_config(cls, config):
-        input_shape = config.pop('input_shape') # Get input_shape from config
+        input_shape = tuple(config.pop('input_shape')) # Deserialize input_shape as a tuple
         return cls(input_shape=input_shape, **config) # Pass input_shape and other configs to constructor
 
 
@@ -192,7 +192,7 @@ if uploaded_file:
         start_time = time.time()
 
         # Define PINN-GRU Model
-        input_shape = (1, X_train_dynamic.shape[2]) # Define input shape here
+        input_shape = (1, X_train_dynamic.shape[2]) # Define input shape here - TUPLE
         model = PINNModel(input_shape=input_shape,
                           gru_units=GRU_UNITS,
                           dense_units_1=DENSE_UNITS_1,
