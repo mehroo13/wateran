@@ -23,7 +23,7 @@ PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 EPOCH_RANGE = list(range(1, 1001)) # Epoch range for slider
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected get_config - use stored attributes) --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected get_config - Model definition in __init__) --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -64,37 +64,58 @@ def custom_loss(inputs, y_true, y_pred):
 
 
 class PINNModel(tf.keras.Model):
-    def __init__(self, inputs, output, **kwargs):
-        super(PINNModel, self).__init__(inputs=inputs, outputs=output, **kwargs)
-        self._input_tensor = inputs  # Store input tensor as a class attribute
-        self._output_tensor = output # Store output tensor as a class attribute
+    def __init__(self, input_shape, gru_units=GRU_UNITS, dense_units_1=DENSE_UNITS_1, dense_units_2=DENSE_UNITS_2, dense_units_3=DENSE_UNITS_3, dropout_rate=DROPOUT_RATE, **kwargs): # Add hyperparameters as args
+        super(PINNModel, self).__init__(**kwargs)
+        self.gru_units = gru_units # Store hyperparameters
+        self.dense_units_1 = dense_units_1
+        self.dense_units_2 = dense_units_2
+        self.dense_units_3 = dense_units_3
+        self.dropout_rate = dropout_rate
+        self.input_shape_arg = input_shape # Store input_shape
 
-
-    def train_step(self, data):
-        X, y = data
-        with tf.GradientTape() as tape:
-            y_pred = self(X, training=True)
-            loss = custom_loss(X, y, y_pred)
-        gradients = tape.gradient(loss, self.trainable_weights)
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_weights))
-        return {"loss": loss}
+        # Define layers in __init__
+        self.inputs_PINN = tf.keras.layers.Input(shape=input_shape) # Input layer now defined here, using input_shape argument
+        self.bidirectional_gru = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(gru_units, return_sequences=True))
+        self.attention = Attention()
+        self.dense1 = tf.keras.layers.Dense(dense_units_1, activation='relu')
+        self.bn1 = tf.keras.layers.BatchNormalization()
+        self.dropout1 = tf.keras.layers.Dropout(dropout_rate)
+        self.dense2 = tf.keras.layers.Dense(dense_units_2, activation='relu')
+        self.bn2 = tf.keras.layers.BatchNormalization()
+        self.dropout2 = tf.keras.layers.Dropout(dropout_rate)
+        self.dense3 = tf.keras.layers.Dense(dense_units_3, activation='relu')
+        self.output_layer = tf.keras.layers.Dense(1) # Output layer
 
     def call(self, inputs):
-        return super().call(inputs)
+        x = self.inputs_PINN(inputs) # Apply input layer
+        x = self.bidirectional_gru(x)
+        x = self.attention(x)
+        x = self.dense1(x)
+        x = self.bn1(x)
+        x = self.dropout1(x)
+        x = self.dense2(x)
+        x = self.bn2(x)
+        x = self.dropout2(x)
+        x = self.dense3(x)
+        output = self.output_layer(x)
+        return output
 
     def get_config(self):
         config = super().get_config()
-        config.update({ # Add input and output tensor configs to the serialized config
-            'inputs': tf.keras.saving.serialize_keras_object(self._input_tensor), # Use the stored class attribute
-            'output': tf.keras.saving.serialize_keras_object(self._output_tensor)  # Use the stored class attribute
+        config.update({ # Serialize hyperparameters and input_shape
+            'gru_units': self.gru_units,
+            'dense_units_1': self.dense_units_1,
+            'dense_units_2': self.dense_units_2,
+            'dense_units_3': self.dense_units_3,
+            'dropout_rate': self.dropout_rate,
+            'input_shape': self.input_shape_arg,
         })
         return config
 
     @classmethod
     def from_config(cls, config):
-        input_tensor = tf.keras.saving.deserialize_keras_object(config.pop('inputs')) # Deserialize input tensor
-        output_tensor = tf.keras.saving.deserialize_keras_object(config.pop('output')) # Deserialize output tensor
-        return cls(input_tensor, output_tensor, **config) # Pass inputs, outputs, and remaining config to constructor
+        input_shape = config.pop('input_shape') # Get input_shape from config
+        return cls(input_shape=input_shape, **config) # Pass input_shape and other configs to constructor
 
 
 # Streamlit App Title
@@ -171,18 +192,13 @@ if uploaded_file:
         start_time = time.time()
 
         # Define PINN-GRU Model
-        inputs_PINN = tf.keras.Input(shape=(1, X_train_dynamic.shape[2]))
-        x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(GRU_UNITS, return_sequences=True))(inputs_PINN) # Corrected line - input_shape removed
-        x = Attention()(x)
-        x = tf.keras.layers.Dense(DENSE_UNITS_1, activation='relu')(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-        x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
-        x = tf.keras.layers.Dense(DENSE_UNITS_2, activation='relu')(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-        x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
-        x = tf.keras.layers.Dense(DENSE_UNITS_3, activation='relu')(x)
-        output_PINN = tf.keras.layers.Dense(1)(x)
-        model = PINNModel(inputs_PINN, output_PINN) # Model creation
+        input_shape = (1, X_train_dynamic.shape[2]) # Define input shape here
+        model = PINNModel(input_shape=input_shape,
+                          gru_units=GRU_UNITS,
+                          dense_units_1=DENSE_UNITS_1,
+                          dense_units_2=DENSE_UNITS_2,
+                          dense_units_3=DENSE_UNITS_3,
+                          dropout_rate=DROPOUT_RATE) # Model creation - pass input_shape and hyperparameters
 
         # --- Debugging: Print config before saving ---
         config = model.get_config()
