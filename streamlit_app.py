@@ -50,18 +50,6 @@ def custom_loss(inputs, y_true, y_pred):
     physics_loss = water_balance_loss(y_true, y_pred, inputs)
     return weighted_mse_loss + PHYSICS_LOSS_WEIGHT * physics_loss
 
-# Revised inputs_PINN definition:
-inputs_PINN = tf.keras.Input(shape=(1, None)) # Shape now reflects the input to GRU directly
-x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(GRU_UNITS, return_sequences=True))(inputs_PINN) # Removed input_shape here, as defined in Input
-x = Attention()(x)
-x = tf.keras.layers.Dense(DENSE_UNITS_1, activation='relu')(x)
-x = tf.keras.layers.BatchNormalization()(x)
-x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
-x = tf.keras.layers.Dense(DENSE_UNITS_2, activation='relu')(x)
-x = tf.keras.layers.BatchNormalization()(x)
-x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
-x = tf.keras.layers.Dense(DENSE_UNITS_3, activation='relu')(x)
-output_PINN = tf.keras.layers.Dense(1)(x)
 
 class PINNModel(tf.keras.Model):
     def train_step(self, data):
@@ -131,10 +119,24 @@ if uploaded_file:
     X_dynamic = df[features_for_model].values # Use selected features
     y_values = df[target].values
 
+    # Debugging - Print shape before reshaping
+    st.write(f"Shape of X_dynamic_scaled before reshape: {X_dynamic.shape}")
+
     X_dynamic_scaled = scaler_dynamic.fit_transform(X_dynamic)
+
+    # Debugging - Print shape after scaling
+    st.write(f"Shape of X_dynamic_scaled after scaling: {X_dynamic_scaled.shape}")
+
+
     y_scaled = scaler_y.fit_transform(y_values.reshape(-1, 1))
 
+    # Debugging - Print shape before GRU reshape
+    st.write(f"Shape of X_dynamic_scaled before GRU reshape: {X_dynamic_scaled.shape}")
+
     X_dynamic_scaled = X_dynamic_scaled.reshape((X_dynamic_scaled.shape[0], 1, X_dynamic_scaled.shape[1])) # Reshape for GRU
+
+    # Debugging - Print shape after GRU reshape
+    st.write(f"Shape of X_dynamic_scaled AFTER GRU reshape: {X_dynamic_scaled.shape}")
 
 
     # Train-Test Split (User-defined)
@@ -142,14 +144,21 @@ if uploaded_file:
     X_train_dynamic, X_test_dynamic, y_train, y_test = train_test_split(X_dynamic_scaled, y_scaled, train_size=train_split, shuffle=False)
     st.write(f"📌 Train Data: {len(X_train_dynamic)}, Test Data: {len(X_test_dynamic)}")
     st.write(f"Shape of X_train_dynamic: {X_train_dynamic.shape}") # Debug print
+    st.write(f"Shape of X_test_dynamic: {X_test_dynamic.shape}") # Debug print
+    # Debugging - Preview X_train_dynamic as DataFrame (first 5 rows) - BEFORE RESHAPE
+    st.write("Preview of X_train_dynamic (first 5 rows - BEFORE RESHAPE):")
+    st.dataframe(pd.DataFrame(X_dynamic_scaled[:5].reshape(5, -1))) # Reshape for dataframe display
 
+    # Define inputs_PINN AFTER data preprocessing, so we know the feature dimension
+    inputs_PINN = tf.keras.Input(shape=(1, X_train_dynamic.shape[2])) # Fully specify input shape here for Input layer
 
     if st.button("🚀 Train Model"):
         start_time = time.time()
 
         # Define PINN-GRU Model
         model = PINNModel(inputs_PINN, output_PINN) # Use pre-defined PINNModel and inputs/outputs
-        # No need to build model here as input_shape is defined in Input
+        # Explicitly build model BEFORE compiling - might be redundant now, but let's keep it
+        model.build(input_shape=(None, 1, X_train_dynamic.shape[2])) # None for batch size, then time steps, then features
 
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss='mae', run_eagerly=True) # Keep run_eagerly=True for custom loss
         lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.8, patience=20, verbose=1)
