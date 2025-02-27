@@ -55,11 +55,12 @@ class Attention(tf.keras.layers.Layer):
         return cls(**config)
 
 
-def custom_loss(inputs, y_true, y_pred):
+def custom_loss(y_true, y_pred_and_physics_inputs): # Modified to accept tuple
+    y_pred, physics_inputs = y_pred_and_physics_inputs # Unpack tuple
     mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
     weights = tf.where(y_true > 0.5, 10.0, 1.0)
     weighted_mse_loss = tf.reduce_mean(weights * tf.square(y_true - y_pred))
-    physics_loss = water_balance_loss(y_true, y_pred, inputs)
+    physics_loss = water_balance_loss(y_true, y_pred, physics_inputs)
     return weighted_mse_loss + PHYSICS_LOSS_WEIGHT * physics_loss
 
 
@@ -98,7 +99,9 @@ class PINNModel(tf.keras.Model):
         x = self.dropout2(x)
         x = self.dense3(x)
         output = self.output_layer(x)
-        return output
+
+        physics_inputs = inputs # Pass all input features for physics loss calculation
+        return output, physics_inputs # Return both prediction and physics inputs
 
     def get_config(self):
         config = super().get_config()
@@ -210,7 +213,7 @@ if uploaded_file:
         # ---------------------------------------------
 
 
-        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss=lambda y_true, y_pred: custom_loss(X_train_dynamic, y_true, y_pred), run_eagerly=True) # Keep run_eagerly=True for custom loss - Corrected Loss function
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss=custom_loss, run_eagerly=True) # Loss is now custom_loss, not lambda
         lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.8, patience=20, verbose=1)
         early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=250, min_delta=0.001, restore_best_weights=True)
 
@@ -235,7 +238,9 @@ if uploaded_file:
 
         # Load the trained model
         model = tf.keras.models.load_model(model_path, custom_objects={'Attention': Attention, 'PINNModel': PINNModel, 'custom_loss': custom_loss}) # Model loading
-        y_pred = model.predict(X_test_dynamic)
+        y_pred_tuple = model.predict(X_test_dynamic) # Get tuple output
+
+        y_pred = y_pred_tuple[0] # Extract prediction from tuple (index 0)
 
 
         y_pred = scaler_y.inverse_transform(y_pred.reshape(-1, 1))
