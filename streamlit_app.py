@@ -23,7 +23,7 @@ PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 EPOCH_RANGE = list(range(1, 1001)) # Epoch range for slider
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected PINNModel config methods) --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Simplified __init__) --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -66,8 +66,9 @@ def custom_loss(inputs, y_true, y_pred):
 class PINNModel(tf.keras.Model):
     def __init__(self, inputs, output, **kwargs):
         super(PINNModel, self).__init__(inputs=inputs, outputs=output, **kwargs)
-        self.inputs = inputs  # Store input tensor
-        self.output = output  # Store output tensor
+        # Removed these lines:
+        # self.inputs = inputs  # Store input tensor
+        # self.output = output  # Store output tensor
 
 
     def train_step(self, data):
@@ -84,17 +85,11 @@ class PINNModel(tf.keras.Model):
 
     def get_config(self):
         config = super().get_config()
-        config.update({ # Add input and output tensor configs to the serialized config
-            'inputs': tf.keras.saving.serialize_keras_object(self.inputs), # Serialize input tensor
-            'output': tf.keras.saving.serialize_keras_object(self.output)  # Serialize output tensor
-        })
         return config
 
     @classmethod
     def from_config(cls, config):
-        input_tensor = tf.keras.saving.deserialize_keras_object(config.pop('inputs')) # Deserialize input tensor
-        output_tensor = tf.keras.saving.deserialize_keras_object(config.pop('output')) # Deserialize output tensor
-        return cls(input_tensor, output_tensor, **config) # Pass inputs, outputs, and remaining config to constructor
+        return cls(**config) # Corrected from_config - call constructor with config
 
 
 # Streamlit App Title
