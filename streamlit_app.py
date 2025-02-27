@@ -18,11 +18,12 @@ DENSE_UNITS_3 = 256
 DROPOUT_RATE = 0.4
 LEARNING_RATE = 0.0001
 BATCH_SIZE = 32
-EPOCHS = 500  # Default epochs, user can adjust in UI
+EPOCHS = 1000  # Default epochs, user can adjust in UI # Increased default epoch
 PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
+EPOCH_RANGE = list(range(1, 1001)) # Epoch range for slider
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Removed redundant input/output storage) --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected PINNModel config methods) --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -65,9 +66,8 @@ def custom_loss(inputs, y_true, y_pred):
 class PINNModel(tf.keras.Model):
     def __init__(self, inputs, output, **kwargs):
         super(PINNModel, self).__init__(inputs=inputs, outputs=output, **kwargs)
-        # Removed these lines:
-        # self.inputs = inputs  # Store input tensor
-        # self.output = output  # Store output tensor
+        self.inputs = inputs  # Store input tensor
+        self.output = output  # Store output tensor
 
 
     def train_step(self, data):
@@ -84,20 +84,17 @@ class PINNModel(tf.keras.Model):
 
     def get_config(self):
         config = super().get_config()
-        # Removed these lines from get_config as well - no need to serialize inputs/outputs manually:
-        # config.update({ # Add input and output tensor configs to the serialized config
-        #     'inputs': tf.keras.saving.serialize_keras_object(self.inputs), # Serialize input tensor
-        #     'output': tf.keras.saving.serialize_keras_object(self.output)  # Serialize output tensor
-        # })
+        config.update({ # Add input and output tensor configs to the serialized config
+            'inputs': tf.keras.saving.serialize_keras_object(self.inputs), # Serialize input tensor
+            'output': tf.keras.saving.serialize_keras_object(self.output)  # Serialize output tensor
+        })
         return config
 
     @classmethod
     def from_config(cls, config):
-        # Removed deserialization of inputs and outputs from from_config:
-        # input_tensor = tf.keras.saving.deserialize_keras_object(config.pop('inputs')) # Deserialize input tensor
-        # output_tensor = tf.keras.saving.deserialize_keras_object(config.pop('output')) # Deserialize output tensor
-        # return cls(input_tensor, output_tensor, **config) # Pass inputs, outputs, and remaining config to constructor
-        return cls(**config) # Corrected from_config - call constructor with config
+        input_tensor = tf.keras.saving.deserialize_keras_object(config.pop('inputs')) # Deserialize input tensor
+        output_tensor = tf.keras.saving.deserialize_keras_object(config.pop('output')) # Deserialize output tensor
+        return cls(input_tensor, output_tensor, **config) # Pass inputs, outputs, and remaining config to constructor
 
 
 # Streamlit App Title
@@ -166,8 +163,8 @@ if uploaded_file:
     X_train_dynamic, X_test_dynamic, y_train, y_test = train_test_split(X_dynamic_scaled, y_scaled, train_size=train_split, shuffle=False)
     st.write(f"📌 Train Data: {len(X_train_dynamic)}, Test Data: {len(X_test_dynamic)}")
 
-    # User-defined epochs
-    epochs = st.number_input("⏳ Set Number of Epochs", min_value=1, max_value=1000, value=EPOCHS, step=50)
+    # User-defined epochs - Slider from 1 to 1000
+    epochs = st.select_slider("⏳ Set Number of Epochs:", options=EPOCH_RANGE, value=EPOCHS) # Epoch slider
 
 
     if st.button("🚀 Train Model"):
@@ -185,7 +182,7 @@ if uploaded_file:
         x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
         x = tf.keras.layers.Dense(DENSE_UNITS_3, activation='relu')(x)
         output_PINN = tf.keras.layers.Dense(1)(x)
-        model = PINNModel(inputs_PINN, output_PINN) # Model creation - using corrected __init__
+        model = PINNModel(inputs_PINN, output_PINN) # Model creation
 
 
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss='mae', run_eagerly=True) # Keep run_eagerly=True for custom loss
@@ -227,6 +224,22 @@ if uploaded_file:
 
         st.write(f"📉 RMSE: {rmse:.4f}, MAE: {mae:.4f}, R²: {r2:.4f}")
         st.write(f"⏳ Testing Time: {test_time:.2f} seconds!")
+
+        # Percentage difference calculation
+        percentage_difference = np.abs((y_pred.flatten() - y_actual.flatten()) / y_actual.flatten()) * 100
+        percentage_difference[np.isinf(percentage_difference)] = np.nan  # Handle division by zero
+
+        # User-defined acceptable percentage threshold
+        acceptable_percentage_error = st.slider("📉 Acceptable Percentage Error Threshold", 1, 100, 20) # Slider for percentage
+
+        # Count and display how many predictions are within the threshold
+        within_threshold_count = np.sum(percentage_difference[~np.isnan(percentage_difference)] <= acceptable_percentage_error) # Exclude NaN values
+
+        percentage_within_threshold = (within_threshold_count / len(y_actual)) * 100 if len(y_actual) > 0 else 0
+
+
+        st.write(f"✅ Predictions within ±{acceptable_percentage_error}% error: {within_threshold_count} out of {len(y_actual)} ({percentage_within_threshold:.2f}%)")
+
 
         # Plot Predictions
         fig, ax = plt.subplots(figsize=(10, 5))
