@@ -125,8 +125,8 @@ if uploaded_file:
     # Add Lag Features for Discharge and HydroMet Features
     lagged_discharge_cols = [f'Lag_Discharge_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)]
     lagged_weather_cols = [f'Lag_Rainfall_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)] + \
-                          [f'Lag_TempMax_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)] + \
-                          [f'Lag_TempMin_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)]
+                            [f'Lag_TempMax_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)] + \
+                            [f'Lag_TempMin_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)]
     seasonality_cols = ['Month_sin', 'Month_cos'] # Seasonality Features
 
     for lag in range(1, NUM_LAGGED_FEATURES + 1):
@@ -170,7 +170,7 @@ if uploaded_file:
 
         # Define PINN-GRU Model
         inputs_PINN = tf.keras.Input(shape=(1, X_train_dynamic.shape[2]))
-        x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(GRU_UNITS, return_sequences=True))(inputs_PINN)
+        x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(GRU_UNITS, return_sequences=True))(inputs_PINN) # Corrected line - input_shape removed
         x = Attention()(x)
         x = tf.keras.layers.Dense(DENSE_UNITS_1, activation='relu')(x)
         x = tf.keras.layers.BatchNormalization()(x)
@@ -196,7 +196,7 @@ if uploaded_file:
 
         # Train the model
         history = model.fit(X_train_dynamic, y_train, epochs=epochs, batch_size=BATCH_SIZE, validation_data=(X_test_dynamic, y_test), verbose=1,
-                                          callbacks=[lr_scheduler, early_stopping])
+                                                        callbacks=[lr_scheduler, early_stopping])
         model.save("PINN_GRU_model.keras")
 
 
