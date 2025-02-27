@@ -23,7 +23,7 @@ PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 EPOCH_RANGE = list(range(1, 1001)) # Epoch range for slider
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected get_config - Tuple input_shape) --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected get_config - Manual Tuple) --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -108,13 +108,14 @@ class PINNModel(tf.keras.Model):
             'dense_units_2': self.dense_units_2,
             'dense_units_3': self.dense_units_3,
             'dropout_rate': self.dropout_rate,
-            'input_shape': self.input_shape_arg # Serialize input_shape which is now a tuple
+            'input_shape': list(self.input_shape_arg) # Serialize input_shape as a list explicitly
         })
         return config
 
     @classmethod
     def from_config(cls, config):
-        input_shape = tuple(config.pop('input_shape')) # Deserialize input_shape as a tuple
+        input_shape_list = config.pop('input_shape') # Get input_shape as a list from config
+        input_shape = tuple(input_shape_list) # Convert list back to tuple
         return cls(input_shape=input_shape, **config) # Pass input_shape and other configs to constructor
 
 
