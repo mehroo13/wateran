@@ -22,7 +22,7 @@ EPOCHS = 500  # Default epochs, user can adjust in UI
 PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected PINNModel config methods) --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Removed redundant input/output storage) --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -65,8 +65,9 @@ def custom_loss(inputs, y_true, y_pred):
 class PINNModel(tf.keras.Model):
     def __init__(self, inputs, output, **kwargs):
         super(PINNModel, self).__init__(inputs=inputs, outputs=output, **kwargs)
-        self.inputs = inputs  # Store input tensor
-        self.output = output  # Store output tensor
+        # Removed these lines:
+        # self.inputs = inputs  # Store input tensor
+        # self.output = output  # Store output tensor
 
 
     def train_step(self, data):
@@ -83,17 +84,20 @@ class PINNModel(tf.keras.Model):
 
     def get_config(self):
         config = super().get_config()
-        config.update({ # Add input and output tensor configs to the serialized config
-            'inputs': tf.keras.saving.serialize_keras_object(self.inputs), # Serialize input tensor
-            'output': tf.keras.saving.serialize_keras_object(self.output)  # Serialize output tensor
-        })
+        # Removed these lines from get_config as well - no need to serialize inputs/outputs manually:
+        # config.update({ # Add input and output tensor configs to the serialized config
+        #     'inputs': tf.keras.saving.serialize_keras_object(self.inputs), # Serialize input tensor
+        #     'output': tf.keras.saving.serialize_keras_object(self.output)  # Serialize output tensor
+        # })
         return config
 
     @classmethod
     def from_config(cls, config):
-        input_tensor = tf.keras.saving.deserialize_keras_object(config.pop('inputs')) # Deserialize input tensor
-        output_tensor = tf.keras.saving.deserialize_keras_object(config.pop('output')) # Deserialize output tensor
-        return cls(input_tensor, output_tensor, **config) # Pass inputs, outputs, and remaining config to constructor
+        # Removed deserialization of inputs and outputs from from_config:
+        # input_tensor = tf.keras.saving.deserialize_keras_object(config.pop('inputs')) # Deserialize input tensor
+        # output_tensor = tf.keras.saving.deserialize_keras_object(config.pop('output')) # Deserialize output tensor
+        # return cls(input_tensor, output_tensor, **config) # Pass inputs, outputs, and remaining config to constructor
+        return cls(**config) # Corrected from_config - call constructor with config
 
 
 # Streamlit App Title
@@ -181,7 +185,7 @@ if uploaded_file:
         x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
         x = tf.keras.layers.Dense(DENSE_UNITS_3, activation='relu')(x)
         output_PINN = tf.keras.layers.Dense(1)(x)
-        model = PINNModel(inputs_PINN, output_PINN)
+        model = PINNModel(inputs_PINN, output_PINN) # Model creation - using corrected __init__
 
 
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss='mae', run_eagerly=True) # Keep run_eagerly=True for custom loss
@@ -208,7 +212,7 @@ if uploaded_file:
             st.stop()
 
         # Load the trained model
-        model = tf.keras.models.load_model(model_path, custom_objects={'Attention': Attention, 'PINNModel': PINNModel, 'custom_loss': custom_loss}) # custom_objects for custom layers/loss
+        model = tf.keras.models.load_model(model_path, custom_objects={'Attention': Attention, 'PINNModel': PINNModel, 'custom_loss': custom_loss}) # Model loading
         y_pred = model.predict(X_test_dynamic)
 
 
