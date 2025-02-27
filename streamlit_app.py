@@ -18,7 +18,7 @@ DENSE_UNITS_3 = 256
 DROPOUT_RATE = 0.4
 LEARNING_RATE = 0.0001
 BATCH_SIZE = 32
-EPOCHS = 10 # Reduced epochs for Streamlit quick testing, can be increased to 500 for real training
+EPOCHS = 500  # Default epochs, user can adjust in UI
 PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 
@@ -119,46 +119,38 @@ if uploaded_file:
     X_dynamic = df[features_for_model].values # Use selected features
     y_values = df[target].values
 
-    # Debugging - Print shape before reshaping
-    st.write(f"Shape of X_dynamic_scaled before reshape: {X_dynamic.shape}")
-
     X_dynamic_scaled = scaler_dynamic.fit_transform(X_dynamic)
-
-    # Debugging - Print shape after scaling
-    st.write(f"Shape of X_dynamic_scaled after scaling: {X_dynamic_scaled.shape}")
-
-
     y_scaled = scaler_y.fit_transform(y_values.reshape(-1, 1))
 
-    # Debugging - Print shape before GRU reshape
-    st.write(f"Shape of X_dynamic_scaled before GRU reshape: {X_dynamic_scaled.shape}")
-
     X_dynamic_scaled = X_dynamic_scaled.reshape((X_dynamic_scaled.shape[0], 1, X_dynamic_scaled.shape[1])) # Reshape for GRU
-
-    # Debugging - Print shape after GRU reshape
-    st.write(f"Shape of X_dynamic_scaled AFTER GRU reshape: {X_dynamic_scaled.shape}")
 
 
     # Train-Test Split (User-defined)
     train_split = st.slider("🎯 Select Training Data Percentage", 50, 90, 80) / 100
     X_train_dynamic, X_test_dynamic, y_train, y_test = train_test_split(X_dynamic_scaled, y_scaled, train_size=train_split, shuffle=False)
     st.write(f"📌 Train Data: {len(X_train_dynamic)}, Test Data: {len(X_test_dynamic)}")
-    st.write(f"Shape of X_train_dynamic: {X_train_dynamic.shape}") # Debug print
-    st.write(f"Shape of X_test_dynamic: {X_test_dynamic.shape}") # Debug print
-    # Debugging - Preview X_train_dynamic as DataFrame (first 5 rows) - BEFORE RESHAPE
-    st.write("Preview of X_train_dynamic (first 5 rows - BEFORE RESHAPE):")
-    st.dataframe(pd.DataFrame(X_dynamic_scaled[:5].reshape(5, -1))) # Reshape for dataframe display
 
-    # Define inputs_PINN AFTER data preprocessing, so we know the feature dimension
-    inputs_PINN = tf.keras.Input(shape=(1, X_train_dynamic.shape[2])) # Fully specify input shape here for Input layer
+    # User-defined epochs
+    epochs = st.number_input("⏳ Set Number of Epochs", min_value=1, max_value=1000, value=EPOCHS, step=50)
+
 
     if st.button("🚀 Train Model"):
         start_time = time.time()
 
         # Define PINN-GRU Model
-        model = PINNModel(inputs_PINN, output_PINN) # Use pre-defined PINNModel and inputs/outputs
-        # Explicitly build model BEFORE compiling - might be redundant now, but let's keep it
-        model.build(input_shape=(None, 1, X_train_dynamic.shape[2])) # None for batch size, then time steps, then features
+        inputs_PINN = tf.keras.Input(shape=(1, X_train_dynamic.shape[2]))
+        x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(GRU_UNITS, return_sequences=True))(inputs_PINN)
+        x = Attention()(x)
+        x = tf.keras.layers.Dense(DENSE_UNITS_1, activation='relu')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
+        x = tf.keras.layers.Dense(DENSE_UNITS_2, activation='relu')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
+        x = tf.keras.layers.Dense(DENSE_UNITS_3, activation='relu')(x)
+        output_PINN = tf.keras.layers.Dense(1)(x)
+        model = PINNModel(inputs_PINN, output_PINN)
+
 
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss='mae', run_eagerly=True) # Keep run_eagerly=True for custom loss
         lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.8, patience=20, verbose=1)
@@ -166,7 +158,7 @@ if uploaded_file:
 
 
         # Train the model
-        history = model.fit(X_train_dynamic, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, validation_data=(X_test_dynamic, y_test), verbose=1,
+        history = model.fit(X_train_dynamic, y_train, epochs=epochs, batch_size=BATCH_SIZE, validation_data=(X_test_dynamic, y_test), verbose=1,
                                           callbacks=[lr_scheduler, early_stopping])
         model.save("PINN_GRU_model.keras")
 
