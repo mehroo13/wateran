@@ -22,7 +22,7 @@ EPOCHS = 500  # Default epochs, user can adjust in UI
 PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (No Changes from provided code) --------------------
+# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel (Corrected __init__ methods) --------------------
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
@@ -31,8 +31,8 @@ def water_balance_loss(y_true, y_pred, inputs):
     return tf.reduce_mean(tf.square(balance_term))
 
 class Attention(tf.keras.layers.Layer):
-    def __init__(self):
-        super(Attention, self).__init__()
+    def __init__(self, **kwargs): # <--- ADD **kwargs here
+        super(Attention, self).__init__(**kwargs) # <--- Pass **kwargs to superclass __init__
 
     def build(self, input_shape):
         self.W = self.add_weight(name="att_weight", shape=(input_shape[-1], input_shape[-1]), initializer="glorot_uniform", trainable=True)
@@ -45,12 +45,12 @@ class Attention(tf.keras.layers.Layer):
         context_vector = tf.reduce_sum(context_vector, axis=1)
         return context_vector
 
-    def get_config(self): # Add get_config for serialization
+    def get_config(self):
         config = super().get_config()
         return config
 
     @classmethod
-    def from_config(cls, config): # Add from_config for deserialization
+    def from_config(cls, config):
         return cls(**config)
 
 
@@ -63,8 +63,10 @@ def custom_loss(inputs, y_true, y_pred):
 
 
 class PINNModel(tf.keras.Model):
-    def __init__(self, inputs, output): # Add inputs and outputs to constructor for get_config/from_config
-        super(PINNModel, self).__init__(inputs=inputs, outputs=output)
+    def __init__(self, inputs, output, **kwargs): # <--- ADD **kwargs here, and inputs, output
+        super(PINNModel, self).__init__(inputs=inputs, outputs=output, **kwargs) # <--- Pass **kwargs to superclass __init__
+        # Note: Pass inputs and outputs to the constructor as well
+
 
     def train_step(self, data):
         X, y = data
@@ -78,13 +80,13 @@ class PINNModel(tf.keras.Model):
     def call(self, inputs):
         return super().call(inputs)
 
-    def get_config(self): # Add get_config for serialization
+    def get_config(self):
         config = super().get_config()
         return config
 
     @classmethod
-    def from_config(cls, config): # Add from_config for deserialization
-        return cls(**config) # **config will be empty, so it will call __init__ with no args
+    def from_config(cls, config):
+        return cls.from_config(config)
 
 
 # Streamlit App Title
