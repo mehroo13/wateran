@@ -8,9 +8,8 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from scipy.stats import pearsonr
 
-# -------------------- Hyperparameters (PINN-GRU) --------------------
+# -------------------- Hyperparameters --------------------
 GRU_UNITS = 128
 DENSE_UNITS_1 = 256
 DENSE_UNITS_2 = 512
@@ -18,20 +17,25 @@ DENSE_UNITS_3 = 256
 DROPOUT_RATE = 0.4
 LEARNING_RATE = 0.0001
 BATCH_SIZE = 32
-EPOCHS = 1000  # Default epochs, user can adjust in UI
+EPOCHS = 1000
 PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
-EPOCH_RANGE = list(range(1, 1001))  # Epoch range for slider
+EPOCH_RANGE = list(range(1, 1001))
 
-# -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel --------------------
+# -------------------- Custom Layers and Loss Functions --------------------
+
 def water_balance_loss(y_true, y_pred, inputs):
-    pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
-    et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
-    predicted_Q = tf.squeeze(y_pred, axis=-1)  # Squeeze to (batch_size,) to match other terms
+    """Calculate physics-based loss enforcing water balance."""
+    pcp = inputs[:, 0, 0]  # Rainfall
+    temp_max = inputs[:, 0, 1]  # Max temperature
+    temp_min = inputs[:, 0, 2]  # Min temperature
+    et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)  # Evapotranspiration
+    predicted_Q = tf.squeeze(y_pred, axis=-1)  # Ensure y_pred is (batch_size,)
     balance_term = pcp - (et + predicted_Q)
     return tf.reduce_mean(tf.square(balance_term))
 
 class Attention(tf.keras.layers.Layer):
+    """Custom attention layer."""
     def __init__(self, **kwargs):
         super(Attention, self).__init__(**kwargs)
 
@@ -43,39 +47,27 @@ class Attention(tf.keras.layers.Layer):
         score = tf.nn.tanh(tf.matmul(inputs, self.W) + self.b)
         attention_weights = tf.nn.softmax(score, axis=1)
         context_vector = attention_weights * inputs
-        context_vector = tf.reduce_sum(context_vector, axis=1)
-        return context_vector
+        return tf.reduce_sum(context_vector, axis=1)
 
     def get_config(self):
-        config = super().get_config()
-        return config
+        return super().get_config()
 
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
-def custom_loss(y_true, y_pred_and_physics_inputs):
-    y_pred, physics_inputs = y_pred_and_physics_inputs  # Unpack tuple
-    mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
-    weights = tf.where(y_true > 0.5, 10.0, 1.0)
-    weighted_mse_loss = tf.reduce_mean(weights * tf.square(y_true - y_pred))
-    physics_loss = water_balance_loss(y_true, y_pred, physics_inputs)
-    return weighted_mse_loss + PHYSICS_LOSS_WEIGHT * physics_loss
+def custom_loss(inputs):
+    """Custom loss combining MSE and physics loss."""
+    def loss(y_true, y_pred):
+        mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
+        weights = tf.where(y_true > 0.5, 10.0, 1.0)
+        weighted_mse_loss = tf.reduce_mean(weights * tf.square(y_true - y_pred))
+        physics_loss = water_balance_loss(y_true, y_pred, inputs)
+        return weighted_mse_loss + PHYSICS_LOSS_WEIGHT * physics_loss
+    return loss
 
 class PINNModel(tf.keras.Model):
-    def __init__(self, input_shape, gru_units=GRU_UNITS, dense_units_1=DENSE_UNITS_1, dense_units_2=DENSE_UNITS_2, dense_units_3=DENSE_UNITS_3, dropout_rate=DROPOUT_RATE, **kwargs):
-        super(PINNModel, self).__init__(**kwargs)
-        self.gru_units = gru_units
-        self.dense_units_1 = dense_units_1
-        self.dense_units_2 = dense_units_2
-        self.dense_units_3 = dense_units_3
-        self.dropout_rate = dropout_rate
-        self.input_shape_arg = tuple(input_shape)
-
-        # Define layers without input_shape in the first layer
-        self.bidirectional_gru = tf.keras.layers.Bidirectional(
-            tf.keras.layers.GRU(gru_units, return_sequences=True)  # Removed input_shape for dynamic inference
-        )
+    """PINN-GRU model."""
+    def __init__(self, input_shape, gru_units=GRU_UNITS, dense_units_1=DENSE_UNITS_1, dense_units_2=DENSE_UNITS_2, dense_units_3=DENSE_UNITS_3, dropout_rate=DROPOUT_RATE):
+        super(PINNModel, self).__init__()
+        self.input_shape_arg = input_shape
+        self.bidirectional_gru = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(gru_units, return_sequences=True))
         self.attention = Attention()
         self.dense1 = tf.keras.layers.Dense(dense_units_1, activation='relu')
         self.bn1 = tf.keras.layers.BatchNormalization()
@@ -96,40 +88,34 @@ class PINNModel(tf.keras.Model):
         x = self.bn2(x)
         x = self.dropout2(x)
         x = self.dense3(x)
-        output = self.output_layer(x)
-        physics_inputs = inputs  # Pass inputs for physics loss
-        return output, physics_inputs
+        return self.output_layer(x)  # Single output
 
     def get_config(self):
-        config = super().get_config()
-        config.update({
-            'gru_units': self.gru_units,
-            'dense_units_1': self.dense_units_1,
-            'dense_units_2': self.dense_units_2,
-            'dense_units_3': self.dense_units_3,
-            'dropout_rate': self.dropout_rate,
-            'input_shape': list(self.input_shape_arg)  # Store as list for serialization
-        })
-        return config
+        return {
+            'input_shape': list(self.input_shape_arg),
+            'gru_units': GRU_UNITS,
+            'dense_units_1': DENSE_UNITS_1,
+            'dense_units_2': DENSE_UNITS_2,
+            'dense_units_3': DENSE_UNITS_3,
+            'dropout_rate': DROPOUT_RATE
+        }
 
     @classmethod
     def from_config(cls, config):
-        input_shape_list = config.pop('input_shape')
-        input_shape = tuple(input_shape_list)
+        input_shape = tuple(config.pop('input_shape'))
         return cls(input_shape=input_shape, **config)
 
-# Streamlit App Title
+# -------------------- Streamlit App --------------------
+
 st.title("🌊 Streamflow Prediction Web App (PINN-GRU)")
 
 # Upload Dataset
 uploaded_file = st.file_uploader("🗂 Upload an Excel file", type=["xlsx"])
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-
-    # Display dataset preview
     st.write("📊 Preview of Dataset:", df.head())
 
-    # Handle Date column
+    # Preprocess Date
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
         df['Month'] = df['Date'].dt.month
@@ -137,135 +123,88 @@ if uploaded_file:
         df['Month_cos'] = np.cos(2 * np.pi * df['Month'] / 12)
         df.drop(columns=['Date'], inplace=True)
 
-    # Handle missing values - Fill NaN values with 0
     df.fillna(0, inplace=True)
 
-    # Select Features & Target
+    # Define Features and Target
     target = 'Discharge (m³/S)'
-    dynamic_feature_cols = ['Rainfall (mm)', 'Maximum temperature (°C)', 'Minimum temperature (°C)']  # HydroMet Features
-    features = [col for col in df.columns if col != target and col in dynamic_feature_cols]  # Initial HydroMet features
+    dynamic_feature_cols = ['Rainfall (mm)', 'Maximum temperature (°C)', 'Minimum temperature (°C)']
+    features = [col for col in df.columns if col != target and col in dynamic_feature_cols]
 
-    # Add Lag Features for Discharge and HydroMet Features
-    lagged_discharge_cols = [f'Lag_Discharge_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)]
-    lagged_weather_cols = [f'Lag_Rainfall_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)] + \
-                          [f'Lag_TempMax_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)] + \
-                          [f'Lag_TempMin_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)]
-    seasonality_cols = ['Month_sin', 'Month_cos']  # Seasonality Features
-
+    # Add Lagged Features
     for lag in range(1, NUM_LAGGED_FEATURES + 1):
         df[f'Lag_Discharge_{lag}'] = df[target].shift(lag).fillna(0)
-        if 'Rainfall (mm)' in df.columns:
-            df[f'Lag_Rainfall_{lag}'] = df['Rainfall (mm)'].shift(lag).fillna(0)
-        if 'Maximum temperature (°C)' in df.columns:
-            df[f'Lag_TempMax_{lag}'] = df['Maximum temperature (°C)'].shift(lag).fillna(0)
-        if 'Minimum temperature (°C)' in df.columns:
-            df[f'Lag_TempMin_{lag}'] = df['Minimum temperature (°C)'].shift(lag).fillna(0)
+        for col in dynamic_feature_cols:
+            if col in df.columns:
+                df[f'Lag_{col}_{lag}'] = df[col].shift(lag).fillna(0)
 
-    all_feature_cols = dynamic_feature_cols + lagged_discharge_cols + lagged_weather_cols + seasonality_cols
-    features_for_model = [col for col in df.columns if col in all_feature_cols]  # Ensure only available columns are used
+    all_feature_cols = dynamic_feature_cols + [f'Lag_Discharge_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)] + \
+                       [f'Lag_{col}_{i}' for col in dynamic_feature_cols for i in range(1, NUM_LAGGED_FEATURES + 1) if f'Lag_{col}_{i}' in df.columns] + \
+                       ['Month_sin', 'Month_cos']
+    features_for_model = [col for col in df.columns if col in all_feature_cols]
 
     # Scaling
-    scaler_dynamic = MinMaxScaler()
+    scaler_X = MinMaxScaler()
     scaler_y = MinMaxScaler()
+    X = scaler_X.fit_transform(df[features_for_model].values)
+    y = scaler_y.fit_transform(df[target].values.reshape(-1, 1))
+    X = X.reshape((X.shape[0], 1, X.shape[1]))  # Shape: (samples, timesteps, features)
 
-    X_dynamic = df[features_for_model].values  # Use selected features
-    y_values = df[target].values
+    # Train-Test Split
+    train_split = st.slider("🎯 Training Data Percentage", 50, 90, 80) / 100
+    X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=train_split, shuffle=False)
+    st.write(f"📌 Train Data: {len(X_train)}, Test Data: {len(X_test)}")
 
-    X_dynamic_scaled = scaler_dynamic.fit_transform(X_dynamic)
-    y_scaled = scaler_y.fit_transform(y_values.reshape(-1, 1))
-
-    X_dynamic_scaled = X_dynamic_scaled.reshape((X_dynamic_scaled.shape[0], 1, X_dynamic_scaled.shape[1]))  # Reshape for GRU
-
-    # Train-Test Split (User-defined)
-    train_split = st.slider("🎯 Select Training Data Percentage", 50, 90, 80) / 100
-    X_train_dynamic, X_test_dynamic, y_train, y_test = train_test_split(X_dynamic_scaled, y_scaled, train_size=train_split, shuffle=False)
-    st.write(f"📌 Train Data: {len(X_train_dynamic)}, Test Data: {len(X_test_dynamic)}")
-
-    # User-defined epochs - Slider from 1 to 1000
-    epochs = st.select_slider("⏳ Set Number of Epochs:", options=EPOCH_RANGE, value=EPOCHS)  # Epoch slider
+    # Epoch Selection
+    epochs = st.select_slider("⏳ Epochs:", options=EPOCH_RANGE, value=EPOCHS)
 
     if st.button("🚀 Train Model"):
         start_time = time.time()
-
-        # Define PINN-GRU Model
-        input_shape = (X_train_dynamic.shape[1], X_train_dynamic.shape[2])  # Define input shape here
-        st.write(f"X_train_dynamic shape: {X_train_dynamic.shape}")  # Debugging shape
-        st.write(f"Input shape for PINNModel: {input_shape}")  # Debugging input_shape
-        model = PINNModel(input_shape=input_shape,
-                          gru_units=GRU_UNITS,
-                          dense_units_1=DENSE_UNITS_1,
-                          dense_units_2=DENSE_UNITS_2,
-                          dense_units_3=DENSE_UNITS_3,
-                          dropout_rate=DROPOUT_RATE)  # Model creation - pass input_shape and hyperparameters
-
-        # Debugging: Print config before saving
-        config = model.get_config()
-        st.write("Model Config Before Saving:")
-        st.json(config)  # Display config in Streamlit
-
-        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss=custom_loss, run_eagerly=True)
+        input_shape = (X_train.shape[1], X_train.shape[2])
+        model = PINNModel(input_shape=input_shape)
+        
+        # Compile with custom loss
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), 
+                      loss=custom_loss(X_train), 
+                      run_eagerly=True)
+        
+        # Callbacks
         lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.8, patience=20, verbose=1)
         early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=250, min_delta=0.001, restore_best_weights=True)
 
-        # Train the model
-        history = model.fit(X_train_dynamic, y_train, epochs=epochs, batch_size=BATCH_SIZE, validation_data=(X_test_dynamic, y_test), verbose=1,
+        # Train
+        history = model.fit(X_train, y_train, epochs=epochs, batch_size=BATCH_SIZE, 
+                            validation_data=(X_test, y_test), verbose=1, 
                             callbacks=[lr_scheduler, early_stopping])
         model.save("PINN_GRU_model.keras")
-
-        training_time = time.time() - start_time
-        st.write(f"✅ PINN-GRU Model Trained in {training_time:.2f} seconds!")
+        
+        st.write(f"✅ Model Trained in {time.time() - start_time:.2f} seconds!")
 
     if st.button("🔍 Test Model"):
-        test_start_time = time.time()
+        if not os.path.exists("PINN_GRU_model.keras"):
+            st.error("🚨 Model not found! Please train the model first.")
+        else:
+            model = tf.keras.models.load_model("PINN_GRU_model.keras", 
+                                               custom_objects={'Attention': Attention, 'PINNModel': PINNModel, 'loss': custom_loss(X_test)})
+            y_pred = model.predict(X_test)
+            y_pred = scaler_y.inverse_transform(y_pred)
+            y_actual = scaler_y.inverse_transform(y_test)
 
-        model_path = "PINN_GRU_model.keras"
+            # Metrics
+            rmse = np.sqrt(mean_squared_error(y_actual, y_pred))
+            mae = mean_absolute_error(y_actual, y_pred)
+            r2 = r2_score(y_actual, y_pred)
+            st.write(f"📉 RMSE: {rmse:.4f}, MAE: {mae:.4f}, R²: {r2:.4f}")
 
-        if not os.path.exists(model_path):
-            st.error(f"🚨 Error: Model file '{model_path}' not found! Please train the model first.")
-            st.stop()
+            # Plot
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(y_actual, label="Actual", color="blue")
+            ax.plot(y_pred, label="Predicted (PINN-GRU)", color="orange")
+            ax.set_title("📈 Actual vs. Predicted Streamflow")
+            ax.set_xlabel("Time")
+            ax.set_ylabel("Streamflow (m³/s)")
+            ax.legend()
+            st.pyplot(fig)
 
-        # Load the trained model
-        model = tf.keras.models.load_model(model_path, custom_objects={'Attention': Attention, 'PINNModel': PINNModel, 'custom_loss': custom_loss})
-        y_pred_tuple = model.predict(X_test_dynamic)  # Get tuple output
-
-        y_pred = y_pred_tuple[0]  # Extract prediction from tuple (index 0)
-
-        y_pred = scaler_y.inverse_transform(y_pred.reshape(-1, 1))
-        y_actual = scaler_y.inverse_transform(y_test.reshape(-1, 1))
-
-        # Compute Metrics
-        rmse = np.sqrt(mean_squared_error(y_actual, y_pred))
-        mae = mean_absolute_error(y_actual, y_pred)
-        r2 = r2_score(y_actual, y_pred)
-        test_time = time.time() - test_start_time
-
-        st.write(f"📉 RMSE: {rmse:.4f}, MAE: {mae:.4f}, R²: {r2:.4f}")
-        st.write(f"⏳ Testing Time: {test_time:.2f} seconds!")
-
-        # Percentage difference calculation
-        percentage_difference = np.abs((y_pred.flatten() - y_actual.flatten()) / y_actual.flatten()) * 100
-        percentage_difference[np.isinf(percentage_difference)] = np.nan  # Handle division by zero
-
-        # User-defined acceptable percentage threshold
-        acceptable_percentage_error = st.slider("📉 Acceptable Percentage Error Threshold", 1, 100, 20)  # Slider for percentage
-
-        # Count and display how many predictions are within the threshold
-        within_threshold_count = np.sum(percentage_difference[~np.isnan(percentage_difference)] <= acceptable_percentage_error)  # Exclude NaN values
-        percentage_within_threshold = (within_threshold_count / len(y_actual)) * 100 if len(y_actual) > 0 else 0
-
-        st.write(f"✅ Predictions within ±{acceptable_percentage_error}% error: {within_threshold_count} out of {len(y_actual)} ({percentage_within_threshold:.2f}%)")
-
-        # Plot Predictions
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(y_actual, label="Actual", color="blue")
-        ax.plot(y_pred, label="Predicted (PINN-GRU)", color="orange")  # Model name in label
-        ax.set_title("📈 Actual vs. Predicted Streamflow (PINN-GRU)")  # Model name in title
-        ax.set_xlabel("Time")
-        ax.set_ylabel("Streamflow (m³/s)")
-        ax.legend()
-        st.pyplot(fig)
-
-        # Save Predictions
-        results_df = pd.DataFrame({"Actual": y_actual.flatten(), "Predicted (PINN-GRU)": y_pred.flatten()})  # Model name in column header
-        results_df.to_csv("streamflow_predictions_pinn_gru.csv", index=False)  # Model name in filename
-        st.download_button("📥 Download Predictions", "streamflow_predictions_pinn_gru.csv", "text/csv")
+            # Save Predictions
+            results_df = pd.DataFrame({"Actual": y_actual.flatten(), "Predicted": y_pred.flatten()})
+            st.download_button("📥 Download Predictions", results_df.to_csv(index=False), "predictions.csv", "text/csv")
