@@ -27,7 +27,7 @@ EPOCH_RANGE = list(range(1, 1001))  # Epoch range for slider
 def water_balance_loss(y_true, y_pred, inputs):
     pcp, temp_max, temp_min = inputs[:, 0, 0], inputs[:, 0, 1], inputs[:, 0, 2]
     et = 0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
-    predicted_Q = y_pred
+    predicted_Q = tf.squeeze(y_pred, axis=-1)  # Squeeze to (batch_size,) to match other terms
     balance_term = pcp - (et + predicted_Q)
     return tf.reduce_mean(tf.square(balance_term))
 
@@ -72,9 +72,9 @@ class PINNModel(tf.keras.Model):
         self.dropout_rate = dropout_rate
         self.input_shape_arg = tuple(input_shape)
 
-        # Define layers with input_shape in the first layer
+        # Define layers without input_shape in the first layer
         self.bidirectional_gru = tf.keras.layers.Bidirectional(
-            tf.keras.layers.GRU(gru_units, return_sequences=True, input_shape=self.input_shape_arg)
+            tf.keras.layers.GRU(gru_units, return_sequences=True)  # Removed input_shape for dynamic inference
         )
         self.attention = Attention()
         self.dense1 = tf.keras.layers.Dense(dense_units_1, activation='relu')
