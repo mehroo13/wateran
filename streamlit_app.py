@@ -13,7 +13,7 @@ LEARNING_RATE = 0.001
 BATCH_SIZE = 16
 EPOCHS = 50  # Reduced for simplicity
 NUM_LAGGED_FEATURES = 3  # Reduced for simplicity
-MODEL_WEIGHTS_PATH = "gru_weights.tf"
+MODEL_WEIGHTS_PATH = "gru_weights.weights.h5"  # Updated filename
 
 # -------------------- Simple GRU Model --------------------
 def build_gru_model(input_shape):
@@ -82,4 +82,3 @@ if uploaded_file:
         # Compute RMSE
         rmse = np.sqrt(mean_squared_error(y_actual, y_pred))
         st.write(f"📉 RMSE: {rmse:.4f}")
-
