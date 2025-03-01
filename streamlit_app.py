@@ -22,6 +22,7 @@ EPOCHS = 1000  # Default epochs, user can adjust in UI
 PHYSICS_LOSS_WEIGHT = 0.1
 NUM_LAGGED_FEATURES = 12
 EPOCH_RANGE = list(range(1, 1001))  # Epoch range for slider
+CATCHMENT_AREA_M2 = 1e6  # Placeholder: 1 km² = 1,000,000 m²; replace with your actual catchment area
 
 # -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel --------------------
 def water_balance_loss(y_true, y_pred, inputs, x_mins, x_maxs, y_min, y_max):
@@ -44,8 +45,12 @@ def water_balance_loss(y_true, y_pred, inputs, x_mins, x_maxs, y_min, y_max):
         0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
     )
 
-    # Compute balance term (note: units are inconsistent; adjust with catchment area if needed)
-    balance_term = pcp - (et + predicted_Q)
+    # Convert predicted_Q from m³/s to mm/day
+    conversion_factor = (86400 * 1000) / CATCHMENT_AREA_M2  # s/day * mm/m
+    predicted_Q_mm_day = predicted_Q * conversion_factor
+
+    # Compute balance term
+    balance_term = pcp - (et + predicted_Q_mm_day)
     return tf.reduce_mean(tf.square(balance_term))
 
 class Attention(tf.keras.layers.Layer):
