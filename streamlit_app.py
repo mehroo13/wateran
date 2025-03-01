@@ -98,6 +98,10 @@ if uploaded_file:
         # Compile with MSE loss
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss='mse')
 
+        # Call model once with dummy input to ensure it's built before saving weights
+        dummy_input = np.zeros((1, X_train.shape[1], X_train.shape[2]))
+        model(dummy_input)
+
         # Train the model
         history = model.fit(
             X_train, y_train,
@@ -107,7 +111,7 @@ if uploaded_file:
             verbose=1
         )
 
-        # Save only the weights (Fix for custom model serialization)
+        # Save only the weights
         model.save_weights("gru_model_weights.tf")
 
         training_time = time.time() - start_time
@@ -125,7 +129,8 @@ if uploaded_file:
         # Rebuild model before loading weights
         input_shape = (X_train.shape[1], X_train.shape[2])
         model = GRUModel(input_shape=input_shape)
-        model.load_weights(weights_path)  # Load trained weights
+        model(dummy_input)  # Ensure model is built before loading weights
+        model.load_weights(weights_path)
 
         # Make predictions
         y_pred = model.predict(X_test)
