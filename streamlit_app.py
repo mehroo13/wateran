@@ -278,5 +278,5 @@ if uploaded_file:
                 csv_file = results_df.to_csv(index=False)
                 st.download_button("📥 Download Predictions as CSV", csv_file, "predictions.csv", "text/csv")
 
-else:
+else: # This 'else' block is now correctly aligned with the initial 'if uploaded_file:'
     st.info("Please upload a dataset file to begin.")
