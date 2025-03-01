@@ -10,8 +10,9 @@ from sklearn.metrics import mean_squared_error, r2_score
 from io import BytesIO
 
 # -------------------- Model Parameters --------------------
-GRU_UNITS = 64
-LEARNING_RATE = 0.001
+DEFAULT_GRU_UNITS = 64
+DEFAULT_DENSE_UNITS = 32
+DEFAULT_LEARNING_RATE = 0.001
 DEFAULT_EPOCHS = 50
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_TRAIN_SPLIT = 80  # Percentage of data used for training
@@ -22,21 +23,34 @@ MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weig
 def nse(actual, predicted):
     return 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - np.mean(actual)) ** 2))
 
-# -------------------- GRU Model with Dropout --------------------
-def build_gru_model(input_shape):
-    model = tf.keras.Sequential([
-        tf.keras.layers.GRU(GRU_UNITS, return_sequences=False, input_shape=input_shape),
-        tf.keras.layers.Dropout(0.2),
-        tf.keras.layers.Dense(32, activation='relu'),
-        tf.keras.layers.Dense(1)
-    ])
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss='mse')
+# -------------------- GRU Model with Custom Layers --------------------
+def build_gru_model(input_shape, gru_layers, dense_layers, gru_units, dense_units, learning_rate):
+    model = tf.keras.Sequential()
+    
+    # Add GRU layers
+    for i in range(gru_layers):
+        if i == 0:
+            # First layer needs input_shape
+            model.add(tf.keras.layers.GRU(gru_units[i], return_sequences=(i < gru_layers - 1), input_shape=input_shape))
+        else:
+            model.add(tf.keras.layers.GRU(gru_units[i], return_sequences=(i < gru_layers - 1)))
+        model.add(tf.keras.layers.Dropout(0.2))  # Dropout after each GRU layer
+    
+    # Add Dense layers
+    for units in dense_units[:dense_layers]:
+        model.add(tf.keras.layers.Dense(units, activation='relu'))
+    
+    # Output layer
+    model.add(tf.keras.layers.Dense(1))
+    
+    # Compile model
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss='mse')
     return model
 
 # -------------------- Streamlit UI --------------------
 st.set_page_config(page_title="Time Series Prediction", page_icon="📈", layout="wide")
 st.title("🌊 Time Series Prediction with GRU")
-st.markdown("**Predict time series data effortlessly using a powerful GRU model. Upload your data, customize your model, and visualize results!**")
+st.markdown("**Predict time series data effortlessly with a customizable GRU model. Design your architecture and visualize results!**")
 
 # Initialize session state
 if 'metrics' not in st.session_state:
@@ -60,6 +74,22 @@ with col2:
         epochs = st.slider("Epochs:", 1, 1500, DEFAULT_EPOCHS, step=10)
         batch_size = st.slider("Batch Size:", 8, 128, DEFAULT_BATCH_SIZE, step=8)
         train_split = st.slider("Training Data %:", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
+
+        # Custom model architecture
+        st.subheader("Model Architecture")
+        gru_layers = st.number_input("Number of GRU Layers:", min_value=1, max_value=5, value=1, step=1)
+        gru_units = []
+        for i in range(gru_layers):
+            units = st.number_input(f"GRU Layer {i+1} Units:", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}")
+            gru_units.append(units)
+
+        dense_layers = st.number_input("Number of Dense Layers:", min_value=1, max_value=5, value=1, step=1)
+        dense_units = []
+        for i in range(dense_layers):
+            units = st.number_input(f"Dense Layer {i+1} Units:", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}")
+            dense_units.append(units)
+
+        learning_rate = st.number_input("Learning Rate:", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f")
 
 # Process data if uploaded
 if uploaded_file:
@@ -117,13 +147,18 @@ if uploaded_file:
     X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
     X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
-    # Removed st.write for shapes from UI
-
     # Buttons
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         if st.button("🚀 Train Model"):
-            model = build_gru_model((X_train.shape[1], X_train.shape[2]))
+            model = build_gru_model(
+                input_shape=(X_train.shape[1], X_train.shape[2]),
+                gru_layers=gru_layers,
+                dense_layers=dense_layers,
+                gru_units=gru_units,
+                dense_units=dense_units,
+                learning_rate=learning_rate
+            )
             try:
                 with st.spinner("Training in progress..."):
                     history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
@@ -138,7 +173,14 @@ if uploaded_file:
             if not os.path.exists(MODEL_WEIGHTS_PATH):
                 st.error("Train the model first!")
                 st.stop()
-            model = build_gru_model((X_train.shape[1], X_train.shape[2]))
+            model = build_gru_model(
+                input_shape=(X_train.shape[1], X_train.shape[2]),
+                gru_layers=gru_layers,
+                dense_layers=dense_layers,
+                gru_units=gru_units,
+                dense_units=dense_units,
+                learning_rate=learning_rate
+            )
             try:
                 model.load_weights(MODEL_WEIGHTS_PATH)
                 y_train_pred = model.predict(X_train)
