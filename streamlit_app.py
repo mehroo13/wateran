@@ -22,10 +22,11 @@ MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weig
 def nse(actual, predicted):
     return 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - np.mean(actual)) ** 2))
 
-# -------------------- GRU Model --------------------
+# -------------------- GRU Model with Dropout --------------------
 def build_gru_model(input_shape):
     model = tf.keras.Sequential([
         tf.keras.layers.GRU(GRU_UNITS, return_sequences=False, input_shape=input_shape),
+        tf.keras.layers.Dropout(0.2),  # Add dropout to prevent under/overfitting
         tf.keras.layers.Dense(32, activation='relu'),
         tf.keras.layers.Dense(1)
     ])
@@ -35,6 +36,16 @@ def build_gru_model(input_shape):
 # -------------------- Streamlit UI --------------------
 st.title("📈 Streamflow Prediction using GRU")
 st.markdown("This web app predicts streamflow using a GRU-based deep learning model.")
+
+# Initialize session state to persist results
+if 'metrics' not in st.session_state:
+    st.session_state.metrics = None
+if 'train_results_df' not in st.session_state:
+    st.session_state.train_results_df = None
+if 'test_results_df' not in st.session_state:
+    st.session_state.test_results_df = None
+if 'fig' not in st.session_state:
+    st.session_state.fig = None
 
 # Upload dataset
 uploaded_file = st.file_uploader("📤 Upload an Excel file", type=["xlsx"])
@@ -59,16 +70,18 @@ if uploaded_file:
     batch_size = st.slider("📦 Batch Size:", min_value=8, max_value=128, value=DEFAULT_BATCH_SIZE, step=8)
     train_split = st.slider("📊 Training Data Percentage:", min_value=50, max_value=90, value=DEFAULT_TRAIN_SPLIT) / 100
 
-    # Scale data
+    # Split data first, then scale separately to avoid leakage
+    train_size = int(len(df) * train_split)
+    train_df, test_df = df[:train_size], df[train_size:]
+
+    # Scale data separately for train and test
     scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(df[['Discharge (m³/S)'] + [f'Lag_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)]])
+    train_scaled = scaler.fit_transform(train_df[['Discharge (m³/S)'] + [f'Lag_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)]])
+    test_scaled = scaler.transform(test_df[['Discharge (m³/S)'] + [f'Lag_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)]])
 
     # Train-test split
-    train_size = int(len(scaled_data) * train_split)
-    train_data, test_data = scaled_data[:train_size], scaled_data[train_size:]
-    
-    X_train, y_train = train_data[:, 1:], train_data[:, 0]
-    X_test, y_test = test_data[:, 1:], test_data[:, 0]
+    X_train, y_train = train_scaled[:, 1:], train_scaled[:, 0]
+    X_test, y_test = test_scaled[:, 1:], test_scaled[:, 0]
 
     # Reshape for GRU (samples, timesteps, features)
     X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
@@ -84,13 +97,13 @@ if uploaded_file:
         st.write(f"Training model with input shape: {(X_train.shape[1], X_train.shape[2])}")
         try:
             history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
-            os.makedirs(os.path.dirname(MODEL_WEIGHTS_PATH), exist_ok=True)  # Ensure directory exists
+            os.makedirs(os.path.dirname(MODEL_WEIGHTS_PATH), exist_ok=True)
             model.save_weights(MODEL_WEIGHTS_PATH)
             st.success(f"✅ Model trained and weights saved to {MODEL_WEIGHTS_PATH}!")
         except PermissionError:
             st.error("🚨 Permission denied when saving weights. Check the directory permissions.")
         except Exception as e:
-            st.error(f"🚨 Model training or saving failed: {str(e)}")
+            st.error(f W"🚨 Model training or saving failed: {str(e)}")
 
     # Test button
     if st.button("🔍 Test Model"):
@@ -125,8 +138,20 @@ if uploaded_file:
             "Testing NSE": nse(y_test_actual, y_test_pred)
         }
 
-        # Display Metrics
-        st.json(metrics)
+        # Check if test performance exceeds training
+        if metrics["Testing RMSE"] < metrics["Training RMSE"] or metrics["Testing R²"] > metrics["Training R²"]:
+            st.warning("⚠️ Test performance exceeds training performance, which is unusual. Check for data leakage or insufficient model complexity.")
+
+        # Store results in session state
+        st.session_state.metrics = metrics
+        st.session_state.train_results_df = pd.DataFrame({
+            "Actual_Train": y_train_actual, 
+            "Predicted_Train": y_train_pred
+        })
+        st.session_state.test_results_df = pd.DataFrame({
+            "Actual_Test": y_test_actual, 
+            "Predicted_Test": y_test_pred
+        })
 
         # Plot Predictions vs Actual Data
         fig, ax = plt.subplots(2, 1, figsize=(10, 6))
@@ -141,20 +166,19 @@ if uploaded_file:
         ax[1].legend()
 
         plt.tight_layout()
-        st.pyplot(fig)
+        st.session_state.fig = fig
 
-        # Save Predictions - Separate DataFrames for Train and Test
-        train_results_df = pd.DataFrame({
-            "Actual_Train": y_train_actual, 
-            "Predicted_Train": y_train_pred
-        })
-        test_results_df = pd.DataFrame({
-            "Actual_Test": y_test_actual, 
-            "Predicted_Test": y_test_pred
-        })
+    # Display persisted results if available
+    if st.session_state.metrics:
+        st.json(st.session_state.metrics)
+    
+    if st.session_state.fig:
+        st.pyplot(st.session_state.fig)
 
-        train_csv = train_results_df.to_csv(index=False)
-        test_csv = test_results_df.to_csv(index=False)
-
+    if st.session_state.train_results_df is not None:
+        train_csv = st.session_state.train_results_df.to_csv(index=False)
         st.download_button("📥 Download Training Predictions", train_csv, "train_predictions.csv", "text/csv")
+
+    if st.session_state.test_results_df is not None:
+        test_csv = st.session_state.test_results_df.to_csv(index=False)
         st.download_button("📥 Download Testing Predictions", test_csv, "test_predictions.csv", "text/csv")
