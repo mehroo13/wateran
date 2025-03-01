@@ -54,8 +54,13 @@ class GRUModel(tf.keras.Model):
     @classmethod
     def from_config(cls, config):
         """Rebuild the model from its configuration."""
+        # Extract only the parameters needed for __init__
         input_shape = config.pop('input_shape')
-        return cls(input_shape=input_shape, **config)
+        gru_units = config.get('gru_units', GRU_UNITS)  # Use default if not present
+        dense_units = config.get('dense_units', DENSE_UNITS)
+        dropout_rate = config.get('dropout_rate', DROPOUT_RATE)
+        # Create a new instance with only the expected arguments
+        return cls(input_shape=input_shape, gru_units=gru_units, dense_units=dense_units, dropout_rate=dropout_rate)
 
 # Streamlit App Title
 st.title("🌊 Streamflow Prediction Web App (GRU)")
