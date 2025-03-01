@@ -106,6 +106,7 @@ if uploaded_file:
             df.dropna(inplace=True)
 
         st.success("Data preprocessing complete!")
+        pass # <--- INSERTED 'pass' STATEMENT HERE
 
 
         # --- Data Exploration ---
@@ -267,7 +268,7 @@ if uploaded_file:
             download_expander = st.expander("Download Predictions", expanded=False)
             with download_expander:
                 results_df = pd.DataFrame({
-                    "Date_Train": df['Date'][-len(y_train_actual)-len(y_test_actual):-len(y_test_actual)].tolist() if len(y_train_actual)>0 else np.nan, # Date for training predictions
+                    "Date_Train": df['Date'][-len(y_train_actual)-len(y_test_actual):-len(y_train_actual)].tolist() if len(y_train_actual)>0 else np.nan, # Date for training predictions
                     "Actual_Train": y_train_actual.tolist() if len(y_train_actual)>0 else np.nan,
                     "Predicted_Train": y_train_pred.tolist() if len(y_train_pred)>0 else np.nan,
                     "Date_Test": df['Date'][-len(y_test_actual):].tolist() if len(y_test_actual)>0 else np.nan, # Date for test predictions
