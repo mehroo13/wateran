@@ -322,4 +322,4 @@ if st.session_state.metrics or st.session_state.fig or st.session_state.train_re
 
 # Footer
 st.markdown("---")
-st.markdown("**Built with ❤️ by xAI | Powered by GRU
+st.markdown("**Built with ❤️ by xAI | Powered by GRU and Streamlit**")
