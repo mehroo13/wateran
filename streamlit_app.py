@@ -41,9 +41,10 @@ class GRUModel(tf.keras.Model):
         return self.output_layer(x)
 
     def get_config(self):
-        config = super().get_config()
+        """Serialize the model’s configuration."""
+        config = super(GRUModel, self).get_config()
         config.update({
-            'input_shape': list(self.input_shape_arg),
+            'input_shape': self.input_shape_arg,  # Save as tuple/list
             'gru_units': self.gru_units,
             'dense_units': self.dense_units,
             'dropout_rate': self.dropout_rate
@@ -52,7 +53,8 @@ class GRUModel(tf.keras.Model):
 
     @classmethod
     def from_config(cls, config):
-        input_shape = tuple(config.pop('input_shape'))
+        """Rebuild the model from its configuration."""
+        input_shape = config.pop('input_shape')  # Extract input_shape
         return cls(input_shape=input_shape, **config)
 
 # Streamlit App Title
@@ -159,47 +161,46 @@ if uploaded_file:
 
         if not os.path.exists(model_path):
             st.error(f"🚨 Error: Model file '{model_path}' not found! Please train the model first.")
-            st.stop()
+        else:
+            # Load the trained model with custom objects
+            model = tf.keras.models.load_model(model_path, custom_objects={'GRUModel': GRUModel})
+            y_pred = model.predict(X_test)
 
-        # Load the trained model
-        model = tf.keras.models.load_model(model_path, custom_objects={'GRUModel': GRUModel})
-        y_pred = model.predict(X_test)
+            # Inverse transform predictions and actual values
+            y_pred = scaler_target.inverse_transform(y_pred.reshape(-1, 1))
+            y_actual = scaler_target.inverse_transform(y_test.reshape(-1, 1))
 
-        # Inverse transform predictions and actual values
-        y_pred = scaler_target.inverse_transform(y_pred.reshape(-1, 1))
-        y_actual = scaler_target.inverse_transform(y_test.reshape(-1, 1))
+            # Compute Metrics
+            rmse = np.sqrt(mean_squared_error(y_actual, y_pred))
+            mae = mean_absolute_error(y_actual, y_pred)
+            r2 = r2_score(y_actual, y_pred)
+            test_time = time.time() - test_start_time
 
-        # Compute Metrics
-        rmse = np.sqrt(mean_squared_error(y_actual, y_pred))
-        mae = mean_absolute_error(y_actual, y_pred)
-        r2 = r2_score(y_actual, y_pred)
-        test_time = time.time() - test_start_time
+            st.write(f"📉 RMSE: {rmse:.4f}, MAE: {mae:.4f}, R²: {r2:.4f}")
+            st.write(f"⏳ Testing Time: {test_time:.2f} seconds!")
 
-        st.write(f"📉 RMSE: {rmse:.4f}, MAE: {mae:.4f}, R²: {r2:.4f}")
-        st.write(f"⏳ Testing Time: {test_time:.2f} seconds!")
+            # Percentage difference
+            percentage_diff = np.abs((y_pred.flatten() - y_actual.flatten()) / y_actual.flatten()) * 100
+            percentage_diff[np.isinf(percentage_diff)] = np.nan  # Handle division by zero
 
-        # Percentage difference
-        percentage_diff = np.abs((y_pred.flatten() - y_actual.flatten()) / y_actual.flatten()) * 100
-        percentage_diff[np.isinf(percentage_diff)] = np.nan  # Handle division by zero
+            # Acceptable error threshold
+            acceptable_error = st.slider("📉 Acceptable Error Threshold (%)", 1, 100, 20)
+            within_threshold = np.sum(percentage_diff[~np.isnan(percentage_diff)] <= acceptable_error)
+            percentage_within = (within_threshold / len(y_actual)) * 100 if len(y_actual) > 0 else 0
 
-        # Acceptable error threshold
-        acceptable_error = st.slider("📉 Acceptable Error Threshold (%)", 1, 100, 20)
-        within_threshold = np.sum(percentage_diff[~np.isnan(percentage_diff)] <= acceptable_error)
-        percentage_within = (within_threshold / len(y_actual)) * 100 if len(y_actual) > 0 else 0
+            st.write(f"✅ Predictions within ±{acceptable_error}%: {within_threshold} out of {len(y_actual)} ({percentage_within:.2f}%)")
 
-        st.write(f"✅ Predictions within ±{acceptable_error}%: {within_threshold} out of {len(y_actual)} ({percentage_within:.2f}%)")
+            # Plot Predictions
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(y_actual, label="Actual", color="blue")
+            ax.plot(y_pred, label="Predicted (GRU)", color="orange")
+            ax.set_title("📈 Actual vs. Predicted Streamflow (GRU)")
+            ax.set_xlabel("Time")
+            ax.set_ylabel("Streamflow (m³/s)")
+            ax.legend()
+            st.pyplot(fig)
 
-        # Plot Predictions
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(y_actual, label="Actual", color="blue")
-        ax.plot(y_pred, label="Predicted (GRU)", color="orange")
-        ax.set_title("📈 Actual vs. Predicted Streamflow (GRU)")
-        ax.set_xlabel("Time")
-        ax.set_ylabel("Streamflow (m³/s)")
-        ax.legend()
-        st.pyplot(fig)
-
-        # Save Predictions
-        results_df = pd.DataFrame({"Actual": y_actual.flatten(), "Predicted (GRU)": y_pred.flatten()})
-        results_df.to_csv("streamflow_predictions_gru.csv", index=False)
-        st.download_button("📥 Download Predictions", "streamflow_predictions_gru.csv", "text/csv")
+            # Save Predictions
+            results_df = pd.DataFrame({"Actual": y_actual.flatten(), "Predicted (GRU)": y_pred.flatten()})
+            results_df.to_csv("streamflow_predictions_gru.csv", index=False)
+            st.download_button("📥 Download Predictions", "streamflow_predictions_gru.csv", "text/csv")
