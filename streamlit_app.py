@@ -54,42 +54,6 @@ with col1:
     # Data Upload Section
     with st.expander("📥 Upload Your Data", expanded=True):
         uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx"])
-        if uploaded_file:
-            df = pd.read_excel(uploaded_file)
-            st.write("**Dataset Preview:**", df.head())
-
-            # Datetime column handling
-            datetime_cols = [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col]) or "date" in col.lower()]
-            if datetime_cols:
-                date_col = st.selectbox("Select datetime column (optional):", ["None"] + datetime_cols, index=0)
-                if date_col != "None":
-                    df[date_col] = pd.to_datetime(df[date_col])
-                    df = df.sort_values(date_col)
-                else:
-                    st.info("Using index for ordering (assuming sequential data).")
-            else:
-                st.info("No datetime column found. Using index for ordering.")
-
-            # Numeric columns
-            numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and (datetime_cols and col != date_col or True)]
-            if len(numeric_cols) < 2:
-                st.error("Dataset needs at least two numeric columns.")
-                st.stop()
-
-            # Variable selection
-            output_var = st.selectbox("🎯 Output Variable to Predict:", numeric_cols)
-            input_vars = st.multiselect("🔧 Input Variables:", [col for col in numeric_cols if col != output_var], default=[col for col in numeric_cols if col != output_var][:1])
-            if not input_vars:
-                st.error("Select at least one input variable.")
-                st.stop()
-
-            # Lag features for all variables
-            feature_cols = []
-            for var in input_vars + [output_var]:
-                for lag in range(1, NUM_LAGGED_FEATURES + 1):
-                    df[f'{var}_Lag_{lag}'] = df[var].shift(lag)
-                    feature_cols.append(f'{var}_Lag_{lag}')
-            df.dropna(inplace=True)
 
 with col2:
     # Model Parameters Section
@@ -97,10 +61,50 @@ with col2:
         epochs = st.slider("Epochs:", 1, 1500, DEFAULT_EPOCHS, step=10)
         batch_size = st.slider("Batch Size:", 8, 128, DEFAULT_BATCH_SIZE, step=8)
         train_split = st.slider("Training Data %:", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
-        st.write(f"Training Size: {int(len(df) * train_split)} rows | Testing Size: {len(df) - int(len(df) * train_split)} rows")
 
 # Process data if uploaded
 if uploaded_file:
+    df = pd.read_excel(uploaded_file)
+    with col1:
+        st.write("**Dataset Preview:**", df.head())
+
+        # Datetime column handling
+        datetime_cols = [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col]) or "date" in col.lower()]
+        if datetime_cols:
+            date_col = st.selectbox("Select datetime column (optional):", ["None"] + datetime_cols, index=0)
+            if date_col != "None":
+                df[date_col] = pd.to_datetime(df[date_col])
+                df = df.sort_values(date_col)
+            else:
+                st.info("Using index for ordering (assuming sequential data).")
+        else:
+            st.info("No datetime column found. Using index for ordering.")
+
+        # Numeric columns
+        numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and (datetime_cols and col != date_col or True)]
+        if len(numeric_cols) < 2:
+            st.error("Dataset needs at least two numeric columns.")
+            st.stop()
+
+        # Variable selection
+        output_var = st.selectbox("🎯 Output Variable to Predict:", numeric_cols)
+        input_vars = st.multiselect("🔧 Input Variables:", [col for col in numeric_cols if col != output_var], default=[col for col in numeric_cols if col != output_var][:1])
+        if not input_vars:
+            st.error("Select at least one input variable.")
+            st.stop()
+
+        # Lag features for all variables
+        feature_cols = []
+        for var in input_vars + [output_var]:
+            for lag in range(1, NUM_LAGGED_FEATURES + 1):
+                df[f'{var}_Lag_{lag}'] = df[var].shift(lag)
+                feature_cols.append(f'{var}_Lag_{lag}')
+        df.dropna(inplace=True)
+
+    with col2:
+        st.write(f"**Training Size:** {int(len(df) * train_split)} rows | **Testing Size:** {len(df) - int(len(df) * train_split)} rows")
+
+    # Data processing
     train_size = int(len(df) * train_split)
     train_df, test_df = df[:train_size], df[train_size:]
     all_feature_cols = input_vars + feature_cols
@@ -146,7 +150,7 @@ if uploaded_file:
                 y_train_actual = scaler.inverse_transform(np.hstack([y_train.reshape(-1, 1), X_train[:, 0, :]]))[:, 0]
                 y_test_actual = scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :]]))[:, 0]
 
-                # Metrics (warning kept internal)
+                # Metrics
                 metrics = {
                     "Training RMSE": np.sqrt(mean_squared_error(y_train_actual, y_train_pred)),
                     "Testing RMSE": np.sqrt(mean_squared_error(y_test_actual, y_test_pred)),
@@ -157,7 +161,7 @@ if uploaded_file:
                 }
                 # Internal check: Test > Train performance (not displayed)
                 if metrics["Testing RMSE"] < metrics["Training RMSE"] or metrics["Testing R²"] > metrics["Training R²"]:
-                    pass  # Could log this internally if needed
+                    pass  # Silent check
 
                 # Store results
                 st.session_state.metrics = metrics
