@@ -151,7 +151,7 @@ if uploaded_file:
     with col2:
         st.write(f"**Training Size:** {int(len(df) * train_split)} rows | **Testing Size:** {len(df) - int(len(df) * train_split)} rows")
 
-        # Visualize model structure
+        # Visualize model structure with error handling
         dummy_input_shape = (1, len(input_vars) + len(feature_cols))  # Timesteps=1, features from input_vars + lags
         model = build_gru_model(
             input_shape=dummy_input_shape,
@@ -161,8 +161,11 @@ if uploaded_file:
             dense_units=dense_units,
             learning_rate=learning_rate
         )
-        plot_model(model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True, dpi=96)
-        st.image(MODEL_PLOT_PATH, caption="GRU Model Structure", use_column_width=True)
+        try:
+            plot_model(model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True, dpi=96)
+            st.image(MODEL_PLOT_PATH, caption="GRU Model Structure", use_column_width=True)
+        except ImportError:
+            st.warning("Model visualization requires 'pydot' and 'graphviz'. Install them with 'pip install pydot graphviz' and ensure Graphviz is installed on your system.")
 
     # Data processing
     train_size = int(len(df) * train_split)
