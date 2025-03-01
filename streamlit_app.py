@@ -10,6 +10,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from scipy.stats import pearsonr
 
+# Set default float type to float32 to avoid type mismatches
+tf.keras.backend.set_floatx('float32')
+
 # -------------------- Hyperparameters (PINN-GRU) --------------------
 GRU_UNITS = 128
 DENSE_UNITS_1 = 256
@@ -25,43 +28,25 @@ EPOCH_RANGE = list(range(1, 1001))  # Epoch range for slider
 CATCHMENT_AREA_M2 = 1e6  # Placeholder: 1 km² = 1,000,000 m²; replace with your actual catchment area
 
 # -------------------- Physics-Informed Loss, Attention Layer, Custom Loss, PINNModel --------------------
-def water_balance_loss(y_true, y_pred, inputs, x_mins, x_maxs, y_min, y_max):
+def water_balance_loss(y_true, y_pred, inputs):
     """Calculate physics-based water balance loss with unscaled values."""
-    # Extract scaled features
-    pcp_scaled = inputs[:, 0, 0]  # Rainfall (mm), scaled
-    temp_max_scaled = inputs[:, 0, 1]  # Max temperature (°C), scaled
-    temp_min_scaled = inputs[:, 0, 2]  # Min temperature (°C), scaled
-    predicted_Q_scaled = tf.squeeze(y_pred, axis=-1)  # Predicted discharge (m³/s), scaled
+    # Extract batch-wise features and cast to float32
+    pcp = tf.cast(inputs[:, 0, 0], tf.float32)  # Rainfall (mm)
+    temp_max = tf.cast(inputs[:, 0, 1], tf.float32)  # Max temperature (°C)
+    temp_min = tf.cast(inputs[:, 0, 2], tf.float32)  # Min temperature (°C)
+    predicted_Q = tf.cast(tf.squeeze(y_pred, axis=-1), tf.float32)  # Predicted discharge (m³/s)
 
-    # Unscale to original units
-    pcp = pcp_scaled * (x_maxs[0] - x_mins[0]) + x_mins[0]
-    temp_max = temp_max_scaled * (x_maxs[1] - x_mins[1]) + x_mins[1]
-    temp_min = temp_min_scaled * (x_maxs[2] - x_mins[2]) + x_mins[2]
-    predicted_Q = predicted_Q_scaled * (y_max - y_min) + y_min
-
-    # Ensure non-negative precipitation
+    # Ensure non-negative values
     pcp = tf.maximum(0.0, pcp)
-
-    # Ensure temp_max >= temp_min and compute evapotranspiration
-    temp_max_safe = tf.maximum(temp_max, temp_min)  # Prevent negative differences
+    temp_max_safe = tf.maximum(temp_max, temp_min)
     temp_min_safe = tf.minimum(temp_max, temp_min)
-    et = tf.maximum(
-        0.0,
-        0.0023 * (temp_max_safe - temp_min_safe) * (temp_max_safe + temp_min_safe)
-    )
-
-    # Ensure non-negative discharge and cap to prevent overflow
-    predicted_Q = tf.maximum(0.0, predicted_Q)
-    predicted_Q = tf.minimum(predicted_Q, 1e6)  # Arbitrary cap; adjust based on your data’s max discharge
-
+    
+    # Compute evapotranspiration (mm/day), ensuring non-negative
+    et = tf.maximum(0.0, 0.0023 * (temp_max_safe - temp_min_safe) * (temp_max_safe + temp_min_safe))
+    
     # Convert predicted_Q from m³/s to mm/day
-    conversion_factor = (86400 * 1000) / CATCHMENT_AREA_M2  # s/day * mm/m
-    predicted_Q_mm_day = predicted_Q * conversion_factor
-
-    # Debug prints - remove or comment out once stable
-    tf.print("pcp:", pcp, summarize=5)
-    tf.print("et:", et, summarize=5)
-    tf.print("predicted_Q_mm_day:", predicted_Q_mm_day, summarize=5)
+    conversion_factor = tf.cast((86400 * 1000) / CATCHMENT_AREA_M2, tf.float32)
+    predicted_Q_mm_day = tf.maximum(0.0, predicted_Q * conversion_factor)
 
     # Compute balance term
     balance_term = pcp - (et + predicted_Q_mm_day)
@@ -72,48 +57,40 @@ class Attention(tf.keras.layers.Layer):
         super(Attention, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        self.W = self.add_weight(name="att_weight", shape=(input_shape[-1], input_shape[-1]), initializer="glorot_uniform", trainable=True)
-        self.b = self.add_weight(name="att_bias", shape=(input_shape[-1],), initializer="zeros", trainable=True)
+        self.W = self.add_weight(name="att_weight", shape=(input_shape[-1], 1), initializer="random_normal", trainable=True)
+        self.b = self.add_weight(name="att_bias", shape=(input_shape[1], 1), initializer="zeros", trainable=True)
 
     def call(self, inputs):
         score = tf.nn.tanh(tf.matmul(inputs, self.W) + self.b)
         attention_weights = tf.nn.softmax(score, axis=1)
         context_vector = attention_weights * inputs
-        context_vector = tf.reduce_sum(context_vector, axis=1)
-        return context_vector
+        return tf.reduce_sum(context_vector, axis=1)
 
     def get_config(self):
-        config = super().get_config()
-        return config
+        return super().get_config()
 
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
-def custom_loss(inputs, x_mins, x_maxs, y_min, y_max):
+def custom_loss(inputs):
     """Custom loss combining MSE and physics-informed loss."""
     def loss(y_true, y_pred):
         mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
         weights = tf.where(y_true > 0.5, 10.0, 1.0)
         weighted_mse_loss = tf.reduce_mean(weights * tf.square(y_true - y_pred))
-        physics_loss = water_balance_loss(y_true, y_pred, inputs, x_mins, x_maxs, y_min, y_max)
+        physics_loss = water_balance_loss(y_true, y_pred, inputs)
         return weighted_mse_loss + PHYSICS_LOSS_WEIGHT * physics_loss
     return loss
 
 class PINNModel(tf.keras.Model):
     def __init__(self, input_shape, gru_units=GRU_UNITS, dense_units_1=DENSE_UNITS_1, dense_units_2=DENSE_UNITS_2, dense_units_3=DENSE_UNITS_3, dropout_rate=DROPOUT_RATE, **kwargs):
         super(PINNModel, self).__init__(**kwargs)
+        self.input_shape_arg = input_shape
         self.gru_units = gru_units
         self.dense_units_1 = dense_units_1
         self.dense_units_2 = dense_units_2
         self.dense_units_3 = dense_units_3
         self.dropout_rate = dropout_rate
-        self.input_shape_arg = tuple(input_shape)
 
-        # Define layers without input_shape in GRU
-        self.bidirectional_gru = tf.keras.layers.Bidirectional(
-            tf.keras.layers.GRU(gru_units, return_sequences=True)
-        )
+        # Define layers
+        self.bidirectional_gru = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(gru_units, return_sequences=True))
         self.attention = Attention()
         self.dense1 = tf.keras.layers.Dense(dense_units_1, activation='relu')
         self.bn1 = tf.keras.layers.BatchNormalization()
@@ -134,25 +111,23 @@ class PINNModel(tf.keras.Model):
         x = self.bn2(x)
         x = self.dropout2(x)
         x = self.dense3(x)
-        output = self.output_layer(x)
-        return output  # Single output
+        return self.output_layer(x)
 
     def get_config(self):
         config = super().get_config()
         config.update({
+            'input_shape': list(self.input_shape_arg),
             'gru_units': self.gru_units,
             'dense_units_1': self.dense_units_1,
             'dense_units_2': self.dense_units_2,
             'dense_units_3': self.dense_units_3,
-            'dropout_rate': self.dropout_rate,
-            'input_shape': list(self.input_shape_arg)
+            'dropout_rate': self.dropout_rate
         })
         return config
 
     @classmethod
     def from_config(cls, config):
-        input_shape_list = config.pop('input_shape')
-        input_shape = tuple(input_shape_list)
+        input_shape = tuple(config.pop('input_shape'))
         return cls(input_shape=input_shape, **config)
 
 # Streamlit App Title
@@ -179,8 +154,8 @@ if uploaded_file:
 
     # Select Features & Target
     target = 'Discharge (m³/S)'
-    dynamic_feature_cols = ['Rainfall (mm)', 'Maximum temperature (°C)', 'Minimum temperature (°C)']  # HydroMet Features
-    features = [col for col in df.columns if col != target and col in dynamic_feature_cols]  # Initial HydroMet features
+    dynamic_feature_cols = ['Rainfall (mm)', 'Maximum temperature (°C)', 'Minimum temperature (°C)']
+    features = [col for col in df.columns if col != target and col in dynamic_feature_cols]
 
     # Add Lag Features
     lagged_discharge_cols = [f'Lag_Discharge_{i}' for i in range(1, NUM_LAGGED_FEATURES + 1)]
@@ -211,7 +186,7 @@ if uploaded_file:
     X_dynamic_scaled = scaler_dynamic.fit_transform(X_dynamic)
     y_scaled = scaler_y.fit_transform(y_values.reshape(-1, 1))
 
-    # Extract scaler parameters for unscaling in loss function
+    # Extract scaler parameters for unscaling in loss function if needed
     x_mins = scaler_dynamic.data_min_
     x_maxs = scaler_dynamic.data_max_
     y_min = scaler_y.data_min_[0]
@@ -231,14 +206,14 @@ if uploaded_file:
         start_time = time.time()
 
         # Define PINN-GRU Model
-        input_shape = (X_train_dynamic.shape[1], X_train_dynamic.shape[2])
+        input_shape = (X_train_dynamic.shape[1], X_train_dynamic.shape[2])  # (timesteps, features)
         model = PINNModel(input_shape=input_shape)
 
-        # Compile with custom loss including scaler parameters
+        # Compile with custom loss
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE),
-            loss=custom_loss(X_train_dynamic, x_mins, x_maxs, y_min, y_max),
-            run_eagerly=True
+            loss=custom_loss(X_train_dynamic),
+            run_eagerly=True  # Useful for debugging
         )
 
         # Callbacks
@@ -273,7 +248,7 @@ if uploaded_file:
             custom_objects={
                 'Attention': Attention,
                 'PINNModel': PINNModel,
-                'loss': custom_loss(X_test_dynamic, x_mins, x_maxs, y_min, y_max)
+                'loss': custom_loss(X_test_dynamic)
             }
         )
         y_pred = model.predict(X_test_dynamic)
