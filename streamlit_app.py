@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, r2_score
 from io import BytesIO
+import time
 
 # -------------------- Model Parameters --------------------
 DEFAULT_GRU_UNITS = 64
@@ -23,6 +24,20 @@ MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weig
 def nse(actual, predicted):
     return 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - np.mean(actual)) ** 2))
 
+# -------------------- Custom Callback for Epoch Tracking --------------------
+class StreamlitProgressCallback(tf.keras.callbacks.Callback):
+    def __init__(self, total_epochs, progress_placeholder):
+        super().__init__()
+        self.total_epochs = total_epochs
+        self.progress_placeholder = progress_placeholder
+        self.current_epoch = 0
+
+    def on_epoch_end(self, epoch, logs=None):
+        self.current_epoch = epoch + 1
+        progress = self.current_epoch / self.total_epochs
+        self.progress_placeholder.progress(min(progress, 1.0))
+        self.progress_placeholder.text(f"Epoch {self.current_epoch}/{self.total_epochs} completed")
+
 # -------------------- GRU Model with Custom Layers --------------------
 def build_gru_model(input_shape, gru_layers, dense_layers, gru_units, dense_units, learning_rate):
     model = tf.keras.Sequential()
@@ -30,11 +45,10 @@ def build_gru_model(input_shape, gru_layers, dense_layers, gru_units, dense_unit
     # Add GRU layers
     for i in range(gru_layers):
         if i == 0:
-            # First layer needs input_shape
             model.add(tf.keras.layers.GRU(gru_units[i], return_sequences=(i < gru_layers - 1), input_shape=input_shape))
         else:
             model.add(tf.keras.layers.GRU(gru_units[i], return_sequences=(i < gru_layers - 1)))
-        model.add(tf.keras.layers.Dropout(0.2))  # Dropout after each GRU layer
+        model.add(tf.keras.layers.Dropout(0.2))
     
     # Add Dense layers
     for units in dense_units[:dense_layers]:
@@ -161,7 +175,15 @@ if uploaded_file:
             )
             try:
                 with st.spinner("Training in progress..."):
-                    history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
+                    progress_placeholder = st.empty()  # Placeholder for progress bar and text
+                    callback = StreamlitProgressCallback(epochs, progress_placeholder)
+                    history = model.fit(
+                        X_train, y_train,
+                        epochs=epochs,
+                        batch_size=batch_size,
+                        verbose=0,
+                        callbacks=[callback]
+                    )
                     os.makedirs(os.path.dirname(MODEL_WEIGHTS_PATH), exist_ok=True)
                     model.save_weights(MODEL_WEIGHTS_PATH)
                 st.success("Model trained successfully!")
