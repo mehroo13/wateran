@@ -16,7 +16,7 @@ DEFAULT_EPOCHS = 50
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_TRAIN_SPLIT = 80  # Percentage of data used for training
 NUM_LAGGED_FEATURES = 3  # Number of lag features
-MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weights.h5")  # Updated extension
+MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weights.h5")
 
 # -------------------- NSE Function --------------------
 def nse(actual, predicted):
@@ -143,12 +143,18 @@ if uploaded_file:
         plt.tight_layout()
         st.pyplot(fig)
 
-        # Save Predictions
-        results_df = pd.DataFrame({
+        # Save Predictions - Separate DataFrames for Train and Test
+        train_results_df = pd.DataFrame({
             "Actual_Train": y_train_actual, 
-            "Predicted_Train": y_train_pred, 
+            "Predicted_Train": y_train_pred
+        })
+        test_results_df = pd.DataFrame({
             "Actual_Test": y_test_actual, 
             "Predicted_Test": y_test_pred
         })
-        csv_file = results_df.to_csv(index=False)
-        st.download_button("📥 Download Predictions", csv_file, "predictions.csv", "text/csv")
+
+        train_csv = train_results_df.to_csv(index=False)
+        test_csv = test_results_df.to_csv(index=False)
+
+        st.download_button("📥 Download Training Predictions", train_csv, "train_predictions.csv", "text/csv")
+        st.download_button("📥 Download Testing Predictions", test_csv, "test_predictions.csv", "text/csv")
