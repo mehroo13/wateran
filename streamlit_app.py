@@ -8,18 +8,19 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, r2_score
 from io import BytesIO
+import time
 from tensorflow.keras.utils import plot_model
 
 # -------------------- Model Parameters --------------------
-DEFAULT_LSTM_UNITS = 64
+DEFAULT_GRU_UNITS = 64
 DEFAULT_DENSE_UNITS = 32
 DEFAULT_LEARNING_RATE = 0.001
 DEFAULT_EPOCHS = 50
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_TRAIN_SPLIT = 80  # Percentage of data used for training
 NUM_LAGGED_FEATURES = 3  # Number of lag features
-MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "lstm_model_weights.weights.h5")
-MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "lstm_model_plot.png")
+MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weights.h5")
+MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "gru_model_plot.png")
 
 # -------------------- NSE Function --------------------
 def nse(actual, predicted):
@@ -39,39 +40,23 @@ class StreamlitProgressCallback(tf.keras.callbacks.Callback):
         self.progress_placeholder.progress(min(progress, 1.0))
         self.progress_placeholder.text(f"Epoch {self.current_epoch}/{self.total_epochs} completed")
 
-# -------------------- LSTM Model with Custom Layers --------------------
-def build_lstm_model(input_shape, lstm_layers, dense_layers, lstm_units, dense_units, learning_rate):
-    """
-    Builds an LSTM model matching the described structure with forget, input, and output gates.
-    
-    Parameters:
-    - input_shape: Shape of input data (timesteps, features).
-    - lstm_layers: Number of LSTM layers.
-    - dense_layers: Number of dense layers.
-    - lstm_units: List of units for each LSTM layer.
-    - dense_units: List of units for each dense layer.
-    - learning_rate: Learning rate for the optimizer.
-    
-    Returns:
-    - Compiled Keras model.
-    """
+# -------------------- GRU Model with Custom Layers --------------------
+def build_gru_model(input_shape, gru_layers, dense_layers, gru_units, dense_units, learning_rate):
     model = tf.keras.Sequential()
     
-    # Add LSTM layers (reflecting forget, input, and output gates internally)
-    for i in range(lstm_layers):
-        # Each LSTM layer includes forget gate (f_t), input gate (i_t), cell state update (c_t), and output gate (o_t)
-        model.add(tf.keras.layers.LSTM(
-            units=lstm_units[i],
-            return_sequences=(i < lstm_layers - 1),  # Return sequences for all but the last LSTM layer
-            input_shape=input_shape if i == 0 else None
-        ))
-        model.add(tf.keras.layers.Dropout(0.2))  # Dropout to prevent overfitting
+    # Add GRU layers
+    for i in range(gru_layers):
+        if i == 0:
+            model.add(tf.keras.layers.GRU(gru_units[i], return_sequences=(i < gru_layers - 1), input_shape=input_shape))
+        else:
+            model.add(tf.keras.layers.GRU(gru_units[i], return_sequences=(i < gru_layers - 1)))
+        model.add(tf.keras.layers.Dropout(0.2))
     
     # Add Dense layers
     for units in dense_units[:dense_layers]:
         model.add(tf.keras.layers.Dense(units, activation='relu'))
     
-    # Output layer (single value prediction)
+    # Output layer
     model.add(tf.keras.layers.Dense(1))
     
     # Compile model
@@ -79,9 +64,9 @@ def build_lstm_model(input_shape, lstm_layers, dense_layers, lstm_units, dense_u
     return model
 
 # -------------------- Streamlit UI --------------------
-st.set_page_config(page_title="Time Series Prediction with LSTM", page_icon="📈", layout="wide")
-st.title("🌊 Time Series Prediction with LSTM")
-st.markdown("**Design and predict time series data with a customizable LSTM model. Visualize your architecture and results in real-time!**")
+st.set_page_config(page_title="Time Series Prediction", page_icon="📈", layout="wide")
+st.title("🌊 Time Series Prediction with GRU")
+st.markdown("**Design and predict time series data with a customizable GRU model. Visualize your architecture and results in real-time!**")
 
 # Initialize session state
 if 'metrics' not in st.session_state:
@@ -92,6 +77,8 @@ if 'test_results_df' not in st.session_state:
     st.session_state.test_results_df = None
 if 'fig' not in st.session_state:
     st.session_state.fig = None
+if 'model_plot' not in st.session_state:
+    st.session_state.model_plot = None
 
 # Layout with columns
 col1, col2 = st.columns([2, 1])
@@ -108,11 +95,11 @@ with col2:
 
         # Custom model architecture
         st.subheader("Model Architecture")
-        lstm_layers = st.number_input("Number of LSTM Layers:", min_value=1, max_value=5, value=1, step=1)
-        lstm_units = []
-        for i in range(lstm_layers):
-            units = st.number_input(f"LSTM Layer {i+1} Units:", min_value=8, max_value=512, value=DEFAULT_LSTM_UNITS, step=8, key=f"lstm_{i}")
-            lstm_units.append(units)
+        gru_layers = st.number_input("Number of GRU Layers:", min_value=1, max_value=5, value=1, step=1)
+        gru_units = []
+        for i in range(gru_layers):
+            units = st.number_input(f"GRU Layer {i+1} Units:", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}")
+            gru_units.append(units)
 
         dense_layers = st.number_input("Number of Dense Layers:", min_value=1, max_value=5, value=1, step=1)
         dense_units = []
@@ -164,19 +151,19 @@ if uploaded_file:
     with col2:
         st.write(f"**Training Size:** {int(len(df) * train_split)} rows | **Testing Size:** {len(df) - int(len(df) * train_split)} rows")
 
-        # Visualize LSTM model structure
+        # Visualize model structure with error handling
         dummy_input_shape = (1, len(input_vars) + len(feature_cols))  # Timesteps=1, features from input_vars + lags
-        model = build_lstm_model(
+        model = build_gru_model(
             input_shape=dummy_input_shape,
-            lstm_layers=lstm_layers,
+            gru_layers=gru_layers,
             dense_layers=dense_layers,
-            lstm_units=lstm_units,
+            gru_units=gru_units,
             dense_units=dense_units,
             learning_rate=learning_rate
         )
         try:
             plot_model(model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True, dpi=96)
-            st.image(MODEL_PLOT_PATH, caption="LSTM Model Structure", use_container_width=True)
+            st.image(MODEL_PLOT_PATH, caption="GRU Model Structure", use_column_width=True)
         except ImportError:
             st.warning("Model visualization requires 'pydot' and 'graphviz'. Install them with 'pip install pydot graphviz' and ensure Graphviz is installed on your system.")
 
@@ -198,11 +185,11 @@ if uploaded_file:
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         if st.button("🚀 Train Model"):
-            model = build_lstm_model(
+            model = build_gru_model(
                 input_shape=(X_train.shape[1], X_train.shape[2]),
-                lstm_layers=lstm_layers,
+                gru_layers=gru_layers,
                 dense_layers=dense_layers,
-                lstm_units=lstm_units,
+                gru_units=gru_units,
                 dense_units=dense_units,
                 learning_rate=learning_rate
             )
@@ -228,11 +215,11 @@ if uploaded_file:
             if not os.path.exists(MODEL_WEIGHTS_PATH):
                 st.error("Train the model first!")
                 st.stop()
-            model = build_lstm_model(
+            model = build_gru_model(
                 input_shape=(X_train.shape[1], X_train.shape[2]),
-                lstm_layers=lstm_layers,
+                gru_layers=gru_layers,
                 dense_layers=dense_layers,
-                lstm_units=lstm_units,
+                gru_units=gru_units,
                 dense_units=dense_units,
                 learning_rate=learning_rate
             )
@@ -247,6 +234,7 @@ if uploaded_file:
                 y_train_actual = scaler.inverse_transform(np.hstack([y_train.reshape(-1, 1), X_train[:, 0, :]]))[:, 0]
                 y_test_actual = scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :]]))[:, 0]
 
+                # Ensure no negative predictions
                 y_train_pred = np.clip(y_train_pred, 0, None)
                 y_test_pred = np.clip(y_test_pred, 0, None)
 
@@ -259,6 +247,9 @@ if uploaded_file:
                     "Training NSE": nse(y_train_actual, y_train_pred),
                     "Testing NSE": nse(y_test_actual, y_test_pred)
                 }
+                # Internal check: Test > Train performance (not displayed)
+                if metrics["Testing RMSE"] < metrics["Training RMSE"] or metrics["Testing R²"] > metrics["Training R²"]:
+                    pass  # Silent check
 
                 # Store results
                 st.session_state.metrics = metrics
@@ -334,4 +325,4 @@ if st.session_state.metrics or st.session_state.fig or st.session_state.train_re
 
 # Footer
 st.markdown("---")
-st.markdown("**Built with ❤️ by xAI | Powered by LSTM and Streamlit**")
+st.markdown("**Built with ❤️ by xAI | Powered by GRU and Streamlit**")
