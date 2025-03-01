@@ -24,14 +24,14 @@ class GRUModel(tf.keras.Model):
     def __init__(self, input_shape, gru_units=GRU_UNITS, dense_units=DENSE_UNITS, dropout_rate=DROPOUT_RATE):
         super(GRUModel, self).__init__()
         self.input_shape_arg = input_shape
-        self.gru_units = gru_units
-        self.dense_units = dense_units
-        self.dropout_rate = dropout_rate
+        self.gru_units = gru_units  # Store as instance attribute
+        self.dense_units = dense_units  # Store as instance attribute
+        self.dropout_rate = dropout_rate  # Store as instance attribute
 
         # Define layers
-        self.gru = tf.keras.layers.GRU(gru_units, return_sequences=False)
-        self.dense1 = tf.keras.layers.Dense(dense_units, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(dropout_rate)
+        self.gru = tf.keras.layers.GRU(self.gru_units, return_sequences=False)
+        self.dense1 = tf.keras.layers.Dense(self.dense_units, activation='relu')
+        self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
         self.output_layer = tf.keras.layers.Dense(1)
 
     def call(self, inputs):
@@ -44,7 +44,7 @@ class GRUModel(tf.keras.Model):
         """Serialize the model’s configuration."""
         config = super(GRUModel, self).get_config()
         config.update({
-            'input_shape': self.input_shape_arg,  # Save as tuple/list
+            'input_shape': list(self.input_shape_arg),
             'gru_units': self.gru_units,
             'dense_units': self.dense_units,
             'dropout_rate': self.dropout_rate
@@ -54,7 +54,7 @@ class GRUModel(tf.keras.Model):
     @classmethod
     def from_config(cls, config):
         """Rebuild the model from its configuration."""
-        input_shape = config.pop('input_shape')  # Extract input_shape
+        input_shape = config.pop('input_shape')
         return cls(input_shape=input_shape, **config)
 
 # Streamlit App Title
@@ -150,57 +150,59 @@ if uploaded_file:
             verbose=1,
             callbacks=[lr_scheduler, early_stopping]
         )
-        model.save("gru_model.keras")
+        # Save the model in HDF5 format
+        model.save("gru_model.h5")
 
         training_time = time.time() - start_time
         st.write(f"✅ GRU Model Trained in {training_time:.2f} seconds!")
 
     if st.button("🔍 Test GRU Model"):
         test_start_time = time.time()
-        model_path = "gru_model.keras"
+        model_path = "gru_model.h5"
 
         if not os.path.exists(model_path):
             st.error(f"🚨 Error: Model file '{model_path}' not found! Please train the model first.")
-        else:
-            # Load the trained model with custom objects
-            model = tf.keras.models.load_model(model_path, custom_objects={'GRUModel': GRUModel})
-            y_pred = model.predict(X_test)
+            st.stop()
 
-            # Inverse transform predictions and actual values
-            y_pred = scaler_target.inverse_transform(y_pred.reshape(-1, 1))
-            y_actual = scaler_target.inverse_transform(y_test.reshape(-1, 1))
+        # Load the trained model with custom objects
+        model = tf.keras.models.load_model(model_path, custom_objects={'GRUModel': GRUModel})
+        y_pred = model.predict(X_test)
 
-            # Compute Metrics
-            rmse = np.sqrt(mean_squared_error(y_actual, y_pred))
-            mae = mean_absolute_error(y_actual, y_pred)
-            r2 = r2_score(y_actual, y_pred)
-            test_time = time.time() - test_start_time
+        # Inverse transform predictions and actual values
+        y_pred = scaler_target.inverse_transform(y_pred.reshape(-1, 1))
+        y_actual = scaler_target.inverse_transform(y_test.reshape(-1, 1))
 
-            st.write(f"📉 RMSE: {rmse:.4f}, MAE: {mae:.4f}, R²: {r2:.4f}")
-            st.write(f"⏳ Testing Time: {test_time:.2f} seconds!")
+        # Compute Metrics
+        rmse = np.sqrt(mean_squared_error(y_actual, y_pred))
+        mae = mean_absolute_error(y_actual, y_pred)
+        r2 = r2_score(y_actual, y_pred)
+        test_time = time.time() - test_start_time
 
-            # Percentage difference
-            percentage_diff = np.abs((y_pred.flatten() - y_actual.flatten()) / y_actual.flatten()) * 100
-            percentage_diff[np.isinf(percentage_diff)] = np.nan  # Handle division by zero
+        st.write(f"📉 RMSE: {rmse:.4f}, MAE: {mae:.4f}, R²: {r2:.4f}")
+        st.write(f"⏳ Testing Time: {test_time:.2f} seconds!")
 
-            # Acceptable error threshold
-            acceptable_error = st.slider("📉 Acceptable Error Threshold (%)", 1, 100, 20)
-            within_threshold = np.sum(percentage_diff[~np.isnan(percentage_diff)] <= acceptable_error)
-            percentage_within = (within_threshold / len(y_actual)) * 100 if len(y_actual) > 0 else 0
+        # Percentage difference
+        percentage_diff = np.abs((y_pred.flatten() - y_actual.flatten()) / y_actual.flatten()) * 100
+        percentage_diff[np.isinf(percentage_diff)] = np.nan  # Handle division by zero
 
-            st.write(f"✅ Predictions within ±{acceptable_error}%: {within_threshold} out of {len(y_actual)} ({percentage_within:.2f}%)")
+        # Acceptable error threshold
+        acceptable_error = st.slider("📉 Acceptable Error Threshold (%)", 1, 100, 20)
+        within_threshold = np.sum(percentage_diff[~np.isnan(percentage_diff)] <= acceptable_error)
+        percentage_within = (within_threshold / len(y_actual)) * 100 if len(y_actual) > 0 else 0
 
-            # Plot Predictions
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.plot(y_actual, label="Actual", color="blue")
-            ax.plot(y_pred, label="Predicted (GRU)", color="orange")
-            ax.set_title("📈 Actual vs. Predicted Streamflow (GRU)")
-            ax.set_xlabel("Time")
-            ax.set_ylabel("Streamflow (m³/s)")
-            ax.legend()
-            st.pyplot(fig)
+        st.write(f"✅ Predictions within ±{acceptable_error}%: {within_threshold} out of {len(y_actual)} ({percentage_within:.2f}%)")
 
-            # Save Predictions
-            results_df = pd.DataFrame({"Actual": y_actual.flatten(), "Predicted (GRU)": y_pred.flatten()})
-            results_df.to_csv("streamflow_predictions_gru.csv", index=False)
-            st.download_button("📥 Download Predictions", "streamflow_predictions_gru.csv", "text/csv")
+        # Plot Predictions
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(y_actual, label="Actual", color="blue")
+        ax.plot(y_pred, label="Predicted (GRU)", color="orange")
+        ax.set_title("📈 Actual vs. Predicted Streamflow (GRU)")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Streamflow (m³/s)")
+        ax.legend()
+        st.pyplot(fig)
+
+        # Save Predictions
+        results_df = pd.DataFrame({"Actual": y_actual.flatten(), "Predicted (GRU)": y_pred.flatten()})
+        results_df.to_csv("streamflow_predictions_gru.csv", index=False)
+        st.download_button("📥 Download Predictions", "streamflow_predictions_gru.csv", "text/csv")
