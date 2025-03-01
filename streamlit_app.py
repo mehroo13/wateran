@@ -74,16 +74,23 @@ if uploaded_file:
     X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
     X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
+    # Debugging shapes
+    st.write(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
+    st.write(f"X_test shape: {X_test.shape}, y_test shape: {y_test.shape}")
+
     # Train button
     if st.button("🚀 Train Model"):
         model = build_gru_model((X_train.shape[1], X_train.shape[2]))
-        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1)
-        
-        if model.history is not None:  # Ensure training has occurred
+        st.write(f"Training model with input shape: {(X_train.shape[1], X_train.shape[2])}")
+        try:
+            history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
+            os.makedirs(os.path.dirname(MODEL_WEIGHTS_PATH), exist_ok=True)  # Ensure directory exists
             model.save_weights(MODEL_WEIGHTS_PATH)
-            st.success("✅ Model trained and weights saved!")
-        else:
-            st.error("🚨 Model training failed. Please check the dataset and parameters.")
+            st.success(f"✅ Model trained and weights saved to {MODEL_WEIGHTS_PATH}!")
+        except PermissionError:
+            st.error("🚨 Permission denied when saving weights. Check the directory permissions.")
+        except Exception as e:
+            st.error(f"🚨 Model training or saving failed: {str(e)}")
 
     # Test button
     if st.button("🔍 Test Model"):
@@ -92,7 +99,12 @@ if uploaded_file:
             st.stop()
 
         model = build_gru_model((X_train.shape[1], X_train.shape[2]))
-        model.load_weights(MODEL_WEIGHTS_PATH)
+        try:
+            model.load_weights(MODEL_WEIGHTS_PATH)
+            st.success("✅ Model weights loaded successfully!")
+        except Exception as e:
+            st.error(f"🚨 Error loading weights: {str(e)}")
+            st.stop()
         
         y_train_pred = model.predict(X_train)
         y_test_pred = model.predict(X_test)
@@ -128,9 +140,15 @@ if uploaded_file:
         ax[1].set_title("📈 Testing Data: Actual vs. Predicted")
         ax[1].legend()
 
+        plt.tight_layout()
         st.pyplot(fig)
 
         # Save Predictions
-        results_df = pd.DataFrame({"Actual_Train": y_train_actual, "Predicted_Train": y_train_pred, "Actual_Test": y_test_actual, "Predicted_Test": y_test_pred})
+        results_df = pd.DataFrame({
+            "Actual_Train": y_train_actual, 
+            "Predicted_Train": y_train_pred, 
+            "Actual_Test": y_test_actual, 
+            "Predicted_Test": y_test_pred
+        })
         csv_file = results_df.to_csv(index=False)
         st.download_button("📥 Download Predictions", csv_file, "predictions.csv", "text/csv")
