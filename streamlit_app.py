@@ -7,6 +7,7 @@ import tempfile
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, r2_score
+from io import BytesIO
 
 # -------------------- Model Parameters --------------------
 GRU_UNITS = 64
@@ -51,12 +52,10 @@ if 'fig' not in st.session_state:
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    # Data Upload Section
     with st.expander("📥 Upload Your Data", expanded=True):
         uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx"])
 
 with col2:
-    # Model Parameters Section
     with st.expander("⚙️ Model Settings", expanded=True):
         epochs = st.slider("Epochs:", 1, 1500, DEFAULT_EPOCHS, step=10)
         batch_size = st.slider("Batch Size:", 8, 128, DEFAULT_BATCH_SIZE, step=8)
@@ -145,10 +144,15 @@ if uploaded_file:
                 y_train_pred = model.predict(X_train)
                 y_test_pred = model.predict(X_test)
 
+                # Inverse transform and clamp negative values to zero
                 y_train_pred = scaler.inverse_transform(np.hstack([y_train_pred, X_train[:, 0, :]]))[:, 0]
                 y_test_pred = scaler.inverse_transform(np.hstack([y_test_pred, X_test[:, 0, :]]))[:, 0]
                 y_train_actual = scaler.inverse_transform(np.hstack([y_train.reshape(-1, 1), X_train[:, 0, :]]))[:, 0]
                 y_test_actual = scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :]]))[:, 0]
+
+                # Ensure no negative predictions
+                y_train_pred = np.clip(y_train_pred, 0, None)
+                y_test_pred = np.clip(y_test_pred, 0, None)
 
                 # Metrics
                 metrics = {
@@ -197,25 +201,41 @@ if uploaded_file:
 # Results Section
 if st.session_state.metrics or st.session_state.fig or st.session_state.train_results_df or st.session_state.test_results_df:
     with st.expander("📊 Results", expanded=True):
-        col_res1, col_res2 = st.columns(2)
-        
-        with col_res1:
-            if st.session_state.metrics:
-                st.subheader("Performance Metrics")
-                st.json(st.session_state.metrics)
+        # Metrics Table
+        if st.session_state.metrics:
+            st.subheader("📏 Model Performance Metrics")
+            metrics_df = pd.DataFrame({
+                "Metric": ["RMSE", "R²", "NSE"],
+                "Training": [f"{st.session_state.metrics['Training RMSE']:.4f}", 
+                             f"{st.session_state.metrics['Training R²']:.4f}", 
+                             f"{st.session_state.metrics['Training NSE']:.4f}"],
+                "Testing": [f"{st.session_state.metrics['Testing RMSE']:.4f}", 
+                            f"{st.session_state.metrics['Testing R²']:.4f}", 
+                            f"{st.session_state.metrics['Testing NSE']:.4f}"]
+            })
+            st.table(metrics_df.style.set_properties(**{'text-align': 'center'}).set_table_styles([
+                {'selector': 'th', 'props': [('font-weight', 'bold'), ('text-align', 'center')]}
+            ]))
 
-        with col_res2:
+        # Plot and Download
+        col_plot, col_dl = st.columns([3, 1])
+        with col_plot:
             if st.session_state.fig:
-                st.subheader("Prediction Plots")
+                st.subheader("📈 Prediction Plots")
                 st.pyplot(st.session_state.fig)
 
-        col_dl1, col_dl2 = st.columns(2)
-        with col_dl1:
+        with col_dl:
+            if st.session_state.fig:
+                # Save figure to BytesIO for download
+                buf = BytesIO()
+                st.session_state.fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
+                buf.seek(0)
+                st.download_button("⬇️ Download Plot", buf, "prediction_plot.png", "image/png", key="plot_dl")
+
             if st.session_state.train_results_df is not None:
                 train_csv = st.session_state.train_results_df.to_csv(index=False)
                 st.download_button("⬇️ Training Data CSV", train_csv, "train_predictions.csv", "text/csv", key="train_dl")
-        
-        with col_dl2:
+
             if st.session_state.test_results_df is not None:
                 test_csv = st.session_state.test_results_df.to_csv(index=False)
                 st.download_button("⬇️ Testing Data CSV", test_csv, "test_predictions.csv", "text/csv", key="test_dl")
