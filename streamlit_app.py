@@ -9,6 +9,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, r2_score
 from io import BytesIO
 import time
+from tensorflow.keras.utils import plot_model
 
 # -------------------- Model Parameters --------------------
 DEFAULT_GRU_UNITS = 64
@@ -19,6 +20,7 @@ DEFAULT_BATCH_SIZE = 16
 DEFAULT_TRAIN_SPLIT = 80  # Percentage of data used for training
 NUM_LAGGED_FEATURES = 3  # Number of lag features
 MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weights.h5")
+MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "gru_model_plot.png")
 
 # -------------------- NSE Function --------------------
 def nse(actual, predicted):
@@ -64,7 +66,7 @@ def build_gru_model(input_shape, gru_layers, dense_layers, gru_units, dense_unit
 # -------------------- Streamlit UI --------------------
 st.set_page_config(page_title="Time Series Prediction", page_icon="📈", layout="wide")
 st.title("🌊 Time Series Prediction with GRU")
-st.markdown("**Predict time series data effortlessly with a customizable GRU model. Design your architecture and visualize results!**")
+st.markdown("**Design and predict time series data with a customizable GRU model. Visualize your architecture and results in real-time!**")
 
 # Initialize session state
 if 'metrics' not in st.session_state:
@@ -75,6 +77,8 @@ if 'test_results_df' not in st.session_state:
     st.session_state.test_results_df = None
 if 'fig' not in st.session_state:
     st.session_state.fig = None
+if 'model_plot' not in st.session_state:
+    st.session_state.model_plot = None
 
 # Layout with columns
 col1, col2 = st.columns([2, 1])
@@ -104,6 +108,21 @@ with col2:
             dense_units.append(units)
 
         learning_rate = st.number_input("Learning Rate:", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f")
+
+        # Visualize model structure (only if data is uploaded to get input shape)
+        if uploaded_file:
+            # Temporary model to get structure (will be rebuilt for training/testing)
+            dummy_input_shape = (1, len(input_vars) + len(feature_cols))  # Timesteps=1, features from input_vars + lags
+            model = build_gru_model(
+                input_shape=dummy_input_shape,
+                gru_layers=gru_layers,
+                dense_layers=dense_layers,
+                gru_units=gru_units,
+                dense_units=dense_units,
+                learning_rate=learning_rate
+            )
+            plot_model(model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True, dpi=96)
+            st.image(MODEL_PLOT_PATH, caption="GRU Model Structure", use_column_width=True)
 
 # Process data if uploaded
 if uploaded_file:
@@ -175,7 +194,7 @@ if uploaded_file:
             )
             try:
                 with st.spinner("Training in progress..."):
-                    progress_placeholder = st.empty()  # Placeholder for progress bar and text
+                    progress_placeholder = st.empty()
                     callback = StreamlitProgressCallback(epochs, progress_placeholder)
                     history = model.fit(
                         X_train, y_train,
