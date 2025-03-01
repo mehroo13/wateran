@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import os
+import tempfile
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
@@ -15,7 +16,7 @@ DEFAULT_EPOCHS = 50
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_TRAIN_SPLIT = 80  # Percentage of data used for training
 NUM_LAGGED_FEATURES = 3  # Number of lag features
-MODEL_WEIGHTS_PATH = "gru_model_weights.h5"
+MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.h5")
 
 # -------------------- NSE Function --------------------
 def nse(actual, predicted):
@@ -77,8 +78,12 @@ if uploaded_file:
     if st.button("🚀 Train Model"):
         model = build_gru_model((X_train.shape[1], X_train.shape[2]))
         model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1)
-        model.save_weights(MODEL_WEIGHTS_PATH)
-        st.success("✅ Model trained and weights saved!")
+        
+        if model.history is not None:  # Ensure training has occurred
+            model.save_weights(MODEL_WEIGHTS_PATH)
+            st.success("✅ Model trained and weights saved!")
+        else:
+            st.error("🚨 Model training failed. Please check the dataset and parameters.")
 
     # Test button
     if st.button("🔍 Test Model"):
