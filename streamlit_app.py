@@ -16,7 +16,7 @@ DEFAULT_EPOCHS = 50
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_TRAIN_SPLIT = 80  # Percentage of data used for training
 NUM_LAGGED_FEATURES = 3  # Number of lag features
-MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.h5")
+MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weights.h5")  # Updated extension
 
 # -------------------- NSE Function --------------------
 def nse(actual, predicted):
