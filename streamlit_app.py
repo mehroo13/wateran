@@ -163,7 +163,7 @@ if uploaded_file:
         )
         try:
             plot_model(model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True, dpi=96)
-            st.image(MODEL_PLOT_PATH, caption="GRU Model Structure", use_column_width=True)
+            st.image(MODEL_PLOT_PATH, caption="GRU Model Structure", use_container_width=True)  # Updated parameter
         except ImportError:
             st.warning("Model visualization requires 'pydot' and 'graphviz'. Install them with 'pip install pydot graphviz' and ensure Graphviz is installed on your system.")
 
