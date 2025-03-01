@@ -117,7 +117,7 @@ if uploaded_file:
     X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
     X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
-    st.write(f"**Shapes:** X_train: {X_train.shape}, y_train: {y_train.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
+    # Removed st.write for shapes from UI
 
     # Buttons
     col_btn1, col_btn2 = st.columns(2)
@@ -226,7 +226,6 @@ if st.session_state.metrics or st.session_state.fig or st.session_state.train_re
 
         with col_dl:
             if st.session_state.fig:
-                # Save figure to BytesIO for download
                 buf = BytesIO()
                 st.session_state.fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
                 buf.seek(0)
