@@ -15,13 +15,13 @@ DEFAULT_EPOCHS = 50
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_TRAIN_SPLIT = 80  # Percentage of data used for training
 NUM_LAGGED_FEATURES = 3  # Number of lag features
-MODEL_WEIGHTS_PATH = "gru_weights.weights.h5"
+MODEL_WEIGHTS_PATH = "gru_model_weights.h5"
 
 # -------------------- NSE Function --------------------
 def nse(actual, predicted):
     return 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - np.mean(actual)) ** 2))
 
-# -------------------- Simple GRU Model --------------------
+# -------------------- GRU Model --------------------
 def build_gru_model(input_shape):
     model = tf.keras.Sequential([
         tf.keras.layers.GRU(GRU_UNITS, return_sequences=False, input_shape=input_shape),
@@ -33,14 +33,15 @@ def build_gru_model(input_shape):
 
 # -------------------- Streamlit UI --------------------
 st.title("📈 Streamflow Prediction using GRU")
+st.markdown("This web app predicts streamflow using a GRU-based deep learning model.")
 
 # Upload dataset
-uploaded_file = st.file_uploader("Upload an Excel file", type=["xlsx"])
+uploaded_file = st.file_uploader("📤 Upload an Excel file", type=["xlsx"])
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    st.write("📊 Dataset Preview:", df.head())
+    st.write("📊 **Dataset Preview:**", df.head())
 
-    # Ensure necessary columns exist
+    # Check necessary columns
     required_cols = ['Date', 'Discharge (m³/S)']
     if not all(col in df.columns for col in required_cols):
         st.error(f"Dataset must contain the following columns: {required_cols}")
@@ -52,9 +53,9 @@ if uploaded_file:
         df[f'Lag_{lag}'] = df['Discharge (m³/S)'].shift(lag)
     df.dropna(inplace=True)
 
-    # User input for training parameters
-    epochs = st.number_input("🔄 Number of Epochs:", min_value=10, max_value=500, value=DEFAULT_EPOCHS, step=10)
-    batch_size = st.number_input("📦 Batch Size:", min_value=8, max_value=128, value=DEFAULT_BATCH_SIZE, step=8)
+    # User-defined model parameters
+    epochs = st.slider("🔄 Number of Epochs:", min_value=10, max_value=500, value=DEFAULT_EPOCHS, step=10)
+    batch_size = st.slider("📦 Batch Size:", min_value=8, max_value=128, value=DEFAULT_BATCH_SIZE, step=8)
     train_split = st.slider("📊 Training Data Percentage:", min_value=50, max_value=90, value=DEFAULT_TRAIN_SPLIT) / 100
 
     # Scale data
@@ -64,7 +65,7 @@ if uploaded_file:
     # Train-test split
     train_size = int(len(scaled_data) * train_split)
     train_data, test_data = scaled_data[:train_size], scaled_data[train_size:]
-
+    
     X_train, y_train = train_data[:, 1:], train_data[:, 0]
     X_test, y_test = test_data[:, 1:], test_data[:, 0]
 
@@ -76,8 +77,8 @@ if uploaded_file:
     if st.button("🚀 Train Model"):
         model = build_gru_model((X_train.shape[1], X_train.shape[2]))
         model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1)
-        model.save_weights(MODEL_WEIGHTS_PATH)  # Save model weights
-        st.success("✅ Model trained and saved!")
+        model.save_weights(MODEL_WEIGHTS_PATH)
+        st.success("✅ Model trained and weights saved!")
 
     # Test button
     if st.button("🔍 Test Model"):
@@ -86,9 +87,8 @@ if uploaded_file:
             st.stop()
 
         model = build_gru_model((X_train.shape[1], X_train.shape[2]))
-        model.load_weights(MODEL_WEIGHTS_PATH)  # Load model weights
-
-        # Make predictions for both training and testing sets
+        model.load_weights(MODEL_WEIGHTS_PATH)
+        
         y_train_pred = model.predict(X_train)
         y_test_pred = model.predict(X_test)
 
@@ -99,27 +99,25 @@ if uploaded_file:
         y_test_actual = scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :]]))[:, 0]
 
         # Compute Metrics
-        train_rmse = np.sqrt(mean_squared_error(y_train_actual, y_train_pred))
-        test_rmse = np.sqrt(mean_squared_error(y_test_actual, y_test_pred))
-        train_r2 = r2_score(y_train_actual, y_train_pred)
-        test_r2 = r2_score(y_test_actual, y_test_pred)
-        train_nse = nse(y_train_actual, y_train_pred)
-        test_nse = nse(y_test_actual, y_test_pred)
+        metrics = {
+            "Training RMSE": np.sqrt(mean_squared_error(y_train_actual, y_train_pred)),
+            "Testing RMSE": np.sqrt(mean_squared_error(y_test_actual, y_test_pred)),
+            "Training R²": r2_score(y_train_actual, y_train_pred),
+            "Testing R²": r2_score(y_test_actual, y_test_pred),
+            "Training NSE": nse(y_train_actual, y_train_pred),
+            "Testing NSE": nse(y_test_actual, y_test_pred)
+        }
 
         # Display Metrics
-        st.write(f"📊 **Training Performance**: RMSE = {train_rmse:.4f}, R² = {train_r2:.4f}, NSE = {train_nse:.4f}")
-        st.write(f"📊 **Testing Performance**: RMSE = {test_rmse:.4f}, R² = {test_r2:.4f}, NSE = {test_nse:.4f}")
+        st.json(metrics)
 
         # Plot Predictions vs Actual Data
         fig, ax = plt.subplots(2, 1, figsize=(10, 6))
-        
-        # Training plot
         ax[0].plot(y_train_actual, label="Actual", color="blue")
         ax[0].plot(y_train_pred, label="Predicted", color="orange")
         ax[0].set_title("📈 Training Data: Actual vs. Predicted")
         ax[0].legend()
-
-        # Testing plot
+        
         ax[1].plot(y_test_actual, label="Actual", color="blue")
         ax[1].plot(y_test_pred, label="Predicted", color="orange")
         ax[1].set_title("📈 Testing Data: Actual vs. Predicted")
@@ -128,12 +126,6 @@ if uploaded_file:
         st.pyplot(fig)
 
         # Save Predictions
-        results_df = pd.DataFrame({
-            "Actual_Train": np.concatenate([y_train_actual, np.full(len(y_test_actual), np.nan)]),
-            "Predicted_Train": np.concatenate([y_train_pred, np.full(len(y_test_actual), np.nan)]),
-            "Actual_Test": np.concatenate([np.full(len(y_train_actual), np.nan), y_test_actual]),
-            "Predicted_Test": np.concatenate([np.full(len(y_train_actual), np.nan), y_test_pred])
-        })
-        
+        results_df = pd.DataFrame({"Actual_Train": y_train_actual, "Predicted_Train": y_train_pred, "Actual_Test": y_test_actual, "Predicted_Test": y_test_pred})
         csv_file = results_df.to_csv(index=False)
         st.download_button("📥 Download Predictions", csv_file, "predictions.csv", "text/csv")
