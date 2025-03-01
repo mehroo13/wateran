@@ -54,7 +54,7 @@ if uploaded_file:
     st.write("📊 **Dataset Preview:**", df.head())
 
     # Check necessary columns
-    required_cols = ['Date', 'Discharge (m³/S)']
+    required_cols = [' Date', 'Discharge (m³/S)']
     if not all(col in df.columns for col in required_cols):
         st.error(f"Dataset must contain the following columns: {required_cols}")
         st.stop()
@@ -103,7 +103,7 @@ if uploaded_file:
         except PermissionError:
             st.error("🚨 Permission denied when saving weights. Check the directory permissions.")
         except Exception as e:
-            st.error(f W"🚨 Model training or saving failed: {str(e)}")
+            st.error(f"🚨 Model training or saving failed: {str(e)}")
 
     # Test button
     if st.button("🔍 Test Model"):
