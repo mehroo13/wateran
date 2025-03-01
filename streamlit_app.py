@@ -109,21 +109,6 @@ with col2:
 
         learning_rate = st.number_input("Learning Rate:", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f")
 
-        # Visualize model structure (only if data is uploaded to get input shape)
-        if uploaded_file:
-            # Temporary model to get structure (will be rebuilt for training/testing)
-            dummy_input_shape = (1, len(input_vars) + len(feature_cols))  # Timesteps=1, features from input_vars + lags
-            model = build_gru_model(
-                input_shape=dummy_input_shape,
-                gru_layers=gru_layers,
-                dense_layers=dense_layers,
-                gru_units=gru_units,
-                dense_units=dense_units,
-                learning_rate=learning_rate
-            )
-            plot_model(model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True, dpi=96)
-            st.image(MODEL_PLOT_PATH, caption="GRU Model Structure", use_column_width=True)
-
 # Process data if uploaded
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
@@ -165,6 +150,19 @@ if uploaded_file:
 
     with col2:
         st.write(f"**Training Size:** {int(len(df) * train_split)} rows | **Testing Size:** {len(df) - int(len(df) * train_split)} rows")
+
+        # Visualize model structure
+        dummy_input_shape = (1, len(input_vars) + len(feature_cols))  # Timesteps=1, features from input_vars + lags
+        model = build_gru_model(
+            input_shape=dummy_input_shape,
+            gru_layers=gru_layers,
+            dense_layers=dense_layers,
+            gru_units=gru_units,
+            dense_units=dense_units,
+            learning_rate=learning_rate
+        )
+        plot_model(model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True, dpi=96)
+        st.image(MODEL_PLOT_PATH, caption="GRU Model Structure", use_column_width=True)
 
     # Data processing
     train_size = int(len(df) * train_split)
@@ -324,4 +322,4 @@ if st.session_state.metrics or st.session_state.fig or st.session_state.train_re
 
 # Footer
 st.markdown("---")
-st.markdown("**Built with ❤️ by xAI | Powered by GRU and Streamlit**")
+st.markdown("**Built with ❤️ by xAI | Powered by GRU
