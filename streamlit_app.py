@@ -39,15 +39,29 @@ def water_balance_loss(y_true, y_pred, inputs, x_mins, x_maxs, y_min, y_max):
     temp_min = temp_min_scaled * (x_maxs[2] - x_mins[2]) + x_mins[2]
     predicted_Q = predicted_Q_scaled * (y_max - y_min) + y_min
 
-    # Compute evapotranspiration, ensuring non-negative
+    # Ensure non-negative precipitation
+    pcp = tf.maximum(0.0, pcp)
+
+    # Ensure temp_max >= temp_min and compute evapotranspiration
+    temp_max_safe = tf.maximum(temp_max, temp_min)  # Prevent negative differences
+    temp_min_safe = tf.minimum(temp_max, temp_min)
     et = tf.maximum(
         0.0,
-        0.0023 * (temp_max - temp_min) * (temp_max + temp_min)
+        0.0023 * (temp_max_safe - temp_min_safe) * (temp_max_safe + temp_min_safe)
     )
+
+    # Ensure non-negative discharge and cap to prevent overflow
+    predicted_Q = tf.maximum(0.0, predicted_Q)
+    predicted_Q = tf.minimum(predicted_Q, 1e6)  # Arbitrary cap; adjust based on your data’s max discharge
 
     # Convert predicted_Q from m³/s to mm/day
     conversion_factor = (86400 * 1000) / CATCHMENT_AREA_M2  # s/day * mm/m
     predicted_Q_mm_day = predicted_Q * conversion_factor
+
+    # Debug prints - remove or comment out once stable
+    tf.print("pcp:", pcp, summarize=5)
+    tf.print("et:", et, summarize=5)
+    tf.print("predicted_Q_mm_day:", predicted_Q_mm_day, summarize=5)
 
     # Compute balance term
     balance_term = pcp - (et + predicted_Q_mm_day)
