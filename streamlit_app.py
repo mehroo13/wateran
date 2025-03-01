@@ -98,36 +98,36 @@ if uploaded_file:
         # Compile with MSE loss
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss='mse')
 
-        # Callbacks
-        lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.8, patience=20, verbose=1)
-        early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=250, min_delta=0.001, restore_best_weights=True)
-
         # Train the model
         history = model.fit(
             X_train, y_train,
             epochs=epochs,
             batch_size=BATCH_SIZE,
             validation_data=(X_test, y_test),
-            verbose=1,
-            callbacks=[lr_scheduler, early_stopping]
+            verbose=1
         )
 
-        # Save the model in TensorFlow's SavedModel format (instead of HDF5)
-        model.save("gru_model")  
+        # Save only the weights (Fix for custom model serialization)
+        model.save_weights("gru_model_weights.tf")
+
         training_time = time.time() - start_time
         st.write(f"✅ GRU Model Trained in {training_time:.2f} seconds!")
 
     if st.button("🔍 Test GRU Model"):
         test_start_time = time.time()
 
-        # Ensure model exists
-        model_path = "gru_model"
-        if not os.path.exists(model_path):
-            st.error(f"🚨 Error: Model directory '{model_path}' not found! Please train the model first.")
+        # Ensure weights file exists
+        weights_path = "gru_model_weights.tf"
+        if not os.path.exists(weights_path):
+            st.error(f"🚨 Error: Model weights '{weights_path}' not found! Please train the model first.")
             st.stop()
 
-        # Load the trained model
-        model = tf.keras.models.load_model(model_path)
+        # Rebuild model before loading weights
+        input_shape = (X_train.shape[1], X_train.shape[2])
+        model = GRUModel(input_shape=input_shape)
+        model.load_weights(weights_path)  # Load trained weights
+
+        # Make predictions
         y_pred = model.predict(X_test)
 
         # Inverse transform predictions
