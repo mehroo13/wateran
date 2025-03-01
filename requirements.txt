@@ -1,10 +1,8 @@
 streamlit
-tensorflow
-scikit-learn
 pandas
 numpy
+tensorflow
+scikit-learn
 matplotlib
-xgboost
-joblib
-openpyxl
-seaborn
+pydot
+graphviz
