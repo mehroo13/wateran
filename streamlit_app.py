@@ -55,7 +55,7 @@ if uploaded_file:
     df.dropna(inplace=True)
 
     # User-defined model parameters
-    epochs = st.slider("🔄 Number of Epochs:", min_value=10, max_value=500, value=DEFAULT_EPOCHS, step=10)
+    epochs = st.slider("🔄 Number of Epochs:", min_value=1, max_value=1500, value=DEFAULT_EPOCHS, step=10)
     batch_size = st.slider("📦 Batch Size:", min_value=8, max_value=128, value=DEFAULT_BATCH_SIZE, step=8)
     train_split = st.slider("📊 Training Data Percentage:", min_value=50, max_value=90, value=DEFAULT_TRAIN_SPLIT) / 100
 
