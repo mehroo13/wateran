@@ -92,6 +92,12 @@ if 'learning_rate' not in st.session_state:
     st.session_state.learning_rate = None
 if 'feature_cols' not in st.session_state:
     st.session_state.feature_cols = None
+if 'new_data_file' not in st.session_state:
+    st.session_state.new_data_file = None
+if 'selected_inputs' not in st.session_state:
+    st.session_state.selected_inputs = None
+if 'new_date_col' not in st.session_state:
+    st.session_state.new_date_col = None
 
 # Layout with columns
 col1, col2 = st.columns([2, 1])
@@ -287,26 +293,59 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
     with st.expander("🔮 Predict New Data", expanded=False):
         st.subheader("Upload New Data for Prediction")
         new_data_file = st.file_uploader("Choose an Excel file with new input data", type=["xlsx"], key="new_data")
-        if new_data_file:
-            new_df = pd.read_excel(new_data_file)
+        
+        # Update session state with new data file only if it changes
+        if new_data_file and new_data_file != st.session_state.new_data_file:
+            st.session_state.new_data_file = new_data_file
+            st.session_state.new_predictions_df = None
+            st.session_state.new_fig = None
+            st.session_state.selected_inputs = None
+            st.session_state.new_date_col = None
+
+        if st.session_state.new_data_file:
+            new_df = pd.read_excel(st.session_state.new_data_file)
             st.write("**New Data Preview:**", new_df.head())
+            
+            # Date column handling for new data
+            datetime_cols = [col for col in new_df.columns if pd.api.types.is_datetime64_any_dtype(new_df[col]) or "date" in col.lower()]
+            if datetime_cols:
+                if st.session_state.new_date_col is None:
+                    st.session_state.new_date_col = "None"
+                date_col = st.selectbox(
+                    "Select datetime column for new data (optional):",
+                    ["None"] + datetime_cols,
+                    index=["None"] + datetime_cols.index(st.session_state.new_date_col) if st.session_state.new_date_col in datetime_cols else 0,
+                    key="date_col_new"
+                )
+                st.session_state.new_date_col = date_col
+                if date_col != "None":
+                    new_df[date_col] = pd.to_datetime(new_df[date_col])
+                    new_df = new_df.sort_values(date_col)
+            else:
+                st.info("No datetime column found in new data. Using index for ordering.")
+                date_col = None
             
             # Get input variables from training
             input_vars = st.session_state.input_vars
             output_var = st.session_state.output_var
             
             # Identify available input columns in new data
-            available_new_inputs = [col for col in new_df.columns if col in input_vars]
+            available_new_inputs = [col for col in new_df.columns if col in input_vars and (date_col is None or col != date_col)]
             if not available_new_inputs:
                 st.error("No recognized input variables found in the new data. Please include at least one of: " + ", ".join(input_vars))
             else:
-                # Let user select which inputs to use for prediction
+                # Use cached selected inputs if available, otherwise set default
+                if st.session_state.selected_inputs is None:
+                    st.session_state.selected_inputs = available_new_inputs[:1]
+                
                 selected_inputs = st.multiselect(
                     "🔧 Select Input Variables for Prediction:",
                     available_new_inputs,
-                    default=available_new_inputs[:1],  # Default to first available input
+                    default=st.session_state.selected_inputs,
                     key="new_input_vars"
                 )
+                st.session_state.selected_inputs = selected_inputs
+                
                 if not selected_inputs:
                     st.error("Please select at least one input variable for prediction.")
                 elif st.button("🔍 Predict"):
@@ -349,29 +388,49 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
                     y_new_pred = np.clip(y_new_pred, 0, None)
                     
-                    # Store and display results
-                    st.session_state.new_predictions_df = pd.DataFrame({
-                        f"Predicted_{output_var}": y_new_pred
-                    })
+                    # Store predictions with dates if available
+                    if date_col != "None" and date_col in new_df.columns:
+                        dates = new_df[date_col].iloc[-len(y_new_pred):]  # Match length after dropping NaNs
+                        st.session_state.new_predictions_df = pd.DataFrame({
+                            "Date": dates,
+                            f"Predicted_{output_var}": y_new_pred
+                        })
+                    else:
+                        st.session_state.new_predictions_df = pd.DataFrame({
+                            f"Predicted_{output_var}": y_new_pred
+                        })
+                    
+                    # Plot with dates if available
                     fig, ax = plt.subplots(figsize=(12, 4))
-                    ax.plot(y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
+                    if date_col != "None" and date_col in new_df.columns:
+                        ax.plot(dates, y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
+                        ax.set_xlabel("Date")
+                        plt.xticks(rotation=45)
+                    else:
+                        ax.plot(y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
                     ax.set_title(f"Predictions for New Data: {output_var}", fontsize=14, pad=10)
+                    ax.set_ylabel(output_var)
                     ax.legend()
                     ax.grid(True, linestyle='--', alpha=0.7)
                     plt.tight_layout()
                     st.session_state.new_fig = fig
-                    
+                
+                # Display cached results if they exist
+                if st.session_state.new_predictions_df is not None:
                     st.subheader("New Data Predictions")
                     st.write(st.session_state.new_predictions_df)
                     col_new_plot, col_new_dl = st.columns([3, 1])
                     with col_new_plot:
-                        st.pyplot(st.session_state.new_fig)
+                        if st.session_state.new_fig:
+                            st.pyplot(st.session_state.new_fig)
                     with col_new_dl:
-                        buf = BytesIO()
-                        st.session_state.new_fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
-                        st.download_button("⬇️ Download New Prediction Plot", buf.getvalue(), "new_prediction_plot.png", "image/png", key="new_plot_dl")
-                        new_csv = st.session_state.new_predictions_df.to_csv(index=False)
-                        st.download_button("⬇️ Download New Predictions CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
+                        if st.session_state.new_fig:
+                            buf = BytesIO()
+                            st.session_state.new_fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
+                            st.download_button("⬇️ Download New Prediction Plot", buf.getvalue(), "new_prediction_plot.png", "image/png", key="new_plot_dl")
+                        if st.session_state.new_predictions_df is not None:
+                            new_csv = st.session_state.new_predictions_df.to_csv(index=False)
+                            st.download_button("⬇️ Download New Predictions CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
                     st.success("Predictions generated successfully!")
 
 # Footer
