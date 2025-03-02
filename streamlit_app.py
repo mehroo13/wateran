@@ -150,6 +150,11 @@ with col1:
         df = pd.read_excel(uploaded_file)
         st.write("**Dataset Preview:**", df.head(5))
 
+        # Basic dataset size check
+        if len(df) <= NUM_LAGGED_FEATURES:
+            st.error(f"Dataset must have more than {NUM_LAGGED_FEATURES} rows to create lagged features. Please upload a larger dataset.")
+            st.stop()
+
         # Date column selection
         datetime_cols = [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col]) or "date" in col.lower()]
         date_col = None
@@ -202,6 +207,16 @@ with col1:
                 df[f'{var}_Lag_{lag}'] = df[var].shift(lag)
                 feature_cols.append(f'{var}_Lag_{lag}')
         df.dropna(inplace=True)
+
+        # --- Check if DataFrame is empty after dropna ---
+        if df.empty:
+            st.error("After generating lagged features and removing rows with missing values, the training dataset became empty. This might be due to:\n"
+                     "- A very small dataset.\n"
+                     "- Selecting too many variables as 'dynamic', leading to excessive NaN values after lag creation.\n"
+                     "Please upload a larger dataset or reconsider your variable selections.")
+            st.stop()
+        # --- End Check for empty DataFrame ---
+
 
         # Store in session state
         st.session_state.input_vars = input_vars
