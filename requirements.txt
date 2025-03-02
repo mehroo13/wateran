@@ -8,3 +8,4 @@ graphviz
 pydot
 openpyxl
 plotly
+seaborn
