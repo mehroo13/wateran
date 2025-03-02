@@ -173,8 +173,15 @@ with col1:
             st.stop()
 
         st.subheader("🔧 Variable Classification")
-        dynamic_cols = st.multiselect("Dynamic Variables (e.g., Precipitation, Temperature)", available_input_cols, default=["Rainfall", "Maximum temperature", "Minimum temperature"], key="dynamic_vars")
-        static_cols = st.multiselect("Static Variables (e.g., Land Use, Soil, Slope)", available_input_cols, default=["Land Use Percentage Classes", "Soil Percentage Classes", "Slope", "Drainage Density (km/km²)"], key="static_vars")
+        # Suggested defaults based on your dataset
+        suggested_dynamic = ["Rainfall", "Maximum temperature", "Minimum temperature"]
+        suggested_static = ["Land Use Percentage Classes", "Soil Percentage Classes", "Slope", "Drainage Density (km/km²)"]
+        # Use intersection of suggested defaults with available columns
+        default_dynamic = [col for col in suggested_dynamic if col in available_input_cols]
+        default_static = [col for col in suggested_static if col in available_input_cols]
+        
+        dynamic_cols = st.multiselect("Dynamic Variables (e.g., Precipitation, Temperature)", available_input_cols, default=default_dynamic if default_dynamic else [], key="dynamic_vars")
+        static_cols = st.multiselect("Static Variables (e.g., Land Use, Soil, Slope)", available_input_cols, default=default_static if default_static else [], key="static_vars")
         
         # Validate no overlap and at least one input
         all_selected = dynamic_cols + static_cols
@@ -431,8 +438,8 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             else:
                 if st.session_state.selected_inputs["dynamic"] == [] and st.session_state.selected_inputs["static"] == []:
                     st.session_state.selected_inputs = {"dynamic": available_new_dynamic, "static": available_new_static}
-                selected_dynamic = st.multiselect("🔧 Dynamic Input Variables", available_new_dynamic, default=st.session_state.selected_inputs["dynamic"], key="new_dynamic_vars")
-                selected_static = st.multiselect("🔧 Static Input Variables", available_new_static, default=st.session_state.selected_inputs["static"], key="new_static_vars")
+                selected_dynamic = st.multiselect("🔧 Dynamic Input Variables", available_new_dynamic, default=[col for col in available_new_dynamic if col in st.session_state.selected_inputs["dynamic"]] if available_new_dynamic else [], key="new_dynamic_vars")
+                selected_static = st.multiselect("🔧 Static Input Variables", available_new_static, default=[col for col in available_new_static if col in st.session_state.selected_inputs["static"]] if available_new_static else [], key="new_static_vars")
                 st.session_state.selected_inputs = {"dynamic": selected_dynamic, "static": selected_static}
                 
                 if not (selected_dynamic or selected_static):
