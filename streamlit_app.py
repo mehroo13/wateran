@@ -9,6 +9,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from io import BytesIO
 from tensorflow.keras.utils import plot_model
+from tensorflow.keras.callbacks import EarlyStopping
 
 # -------------------- Model Parameters --------------------
 DEFAULT_GRU_UNITS = 64
@@ -106,7 +107,7 @@ if 'model_plot' not in st.session_state:
 if 'scaler' not in st.session_state:
     st.session_state.scaler = None
 if 'input_vars' not in st.session_state:
-    st.session_state.input_vars = None
+    st.session_state.input_vars = []
 if 'output_var' not in st.session_state:
     st.session_state.output_var = None
 if 'new_predictions_df' not in st.session_state:
@@ -124,11 +125,11 @@ if 'dense_units' not in st.session_state:
 if 'learning_rate' not in st.session_state:
     st.session_state.learning_rate = None
 if 'feature_cols' not in st.session_state:
-    st.session_state.feature_cols = None
+    st.session_state.feature_cols = []
 if 'new_data_file' not in st.session_state:
     st.session_state.new_data_file = None
 if 'selected_inputs' not in st.session_state:
-    st.session_state.selected_inputs = None
+    st.session_state.selected_inputs = []
 if 'new_date_col' not in st.session_state:
     st.session_state.new_date_col = None
 if 'selected_metrics' not in st.session_state:
@@ -162,21 +163,20 @@ with col1:
         # Numeric columns for variable selection
         numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and (date_col is None or col != date_col)]
         if len(numeric_cols) < 2:
-            st.error("Dataset requires at least two numeric columns.")
+            st.error("Dataset requires at least one input and one output variable (numeric columns).")
             st.stop()
         
         # Variable selection
         output_var = st.selectbox("🎯 Output Variable", numeric_cols, key="output_var_train")
         available_input_cols = [col for col in numeric_cols if col != output_var]
         if not available_input_cols:
-            st.error("No input variables available.")
+            st.error("No input variables available. Select a different output variable or check your dataset.")
             st.stop()
-        input_vars = st.multiselect("🔧 Input Variables", available_input_cols, default=[available_input_cols[0]], key="input_vars_train")
+        input_vars = st.multiselect("🔧 Input Variables", available_input_cols, default=available_input_cols[:1] if available_input_cols else [], key="input_vars")
         if not input_vars:
-            st.error("Select at least one input variable.")
-            st.stop()
+            st.warning("No input variables selected. At least one is recommended for analysis.")
 
-        # Generate lagged features
+        # Generate lagged features for all input variables
         feature_cols = []
         for var in input_vars + [output_var]:
             for lag in range(1, NUM_LAGGED_FEATURES + 1):
@@ -194,12 +194,12 @@ with col1:
 with col2:
     st.subheader("⚙️ Model Configuration")
     
-    # Training Parameters
+    # Training Parameters (always visible)
     epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10)
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8)
     train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
     
-    # Model Architecture
+    # Model Architecture (always visible)
     with st.expander("Model Architecture", expanded=False):
         gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=1, step=1)
         gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}") for i in range(gru_layers)]
@@ -207,7 +207,7 @@ with col2:
         dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(dense_layers)]
         learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f")
     
-    # Metrics Selection
+    # Metrics Selection (always visible)
     st.markdown("**Evaluation Metrics**")
     all_metrics = ["RMSE", "MAE", "R²", "NSE", "KGE", "PBIAS", "Peak Flow Error", "High Flow Bias", "Low Flow Bias", "Volume Error"]
     if st.session_state.selected_metrics is None:
@@ -225,29 +225,38 @@ with col2:
     st.session_state.dense_units = dense_units
     st.session_state.learning_rate = learning_rate
 
-    # Training and Testing Buttons
+    # Training and Testing Buttons (visible only with data)
     if uploaded_file:
+        st.subheader("📈 Actions")
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             if st.button("🚀 Train Model"):
                 train_size = int(len(df) * train_split)
                 train_df, test_df = df[:train_size], df[train_size:]
-                all_feature_cols = input_vars + feature_cols
+                all_input_cols = input_vars + [output_var]
+                all_feature_cols = feature_cols
+                
                 scaler = MinMaxScaler()
-                train_scaled = scaler.fit_transform(train_df[[output_var] + all_feature_cols])
-                test_scaled = scaler.transform(test_df[[output_var] + all_feature_cols])
+                train_scaled = scaler.fit_transform(train_df[all_input_cols + all_feature_cols + [output_var]])
+                test_scaled = scaler.transform(test_df[all_input_cols + all_feature_cols + [output_var]])
                 st.session_state.scaler = scaler
-                X_train, y_train = train_scaled[:, 1:], train_scaled[:, 0]
-                X_test, y_test = test_scaled[:, 1:], test_scaled[:, 0]
+                
+                X_train = train_scaled[:, 1:1 + len(feature_cols)]
+                y_train = train_scaled[:, 0]
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
+                
+                X_test = test_scaled[:, 1:1 + len(feature_cols)]
+                y_test = test_scaled[:, 0]
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
+                # Add EarlyStopping to prevent overfitting
+                early_stopping = EarlyStopping(monitor='loss', patience=10, restore_best_weights=True)
                 model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
                 try:
                     with st.spinner("Training in progress..."):
                         progress_placeholder = st.empty()
                         callback = StreamlitProgressCallback(epochs, progress_placeholder)
-                        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, callbacks=[callback])
+                        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, callbacks=[callback, early_stopping])
                         os.makedirs(os.path.dirname(MODEL_WEIGHTS_PATH), exist_ok=True)
                         model.save_weights(MODEL_WEIGHTS_PATH)
                     st.success("Model trained successfully!")
@@ -261,13 +270,19 @@ with col2:
                     st.stop()
                 train_size = int(len(df) * train_split)
                 train_df, test_df = df[:train_size], df[train_size:]
-                all_feature_cols = input_vars + feature_cols
+                all_input_cols = input_vars + [output_var]
+                all_feature_cols = feature_cols
+                
                 scaler = st.session_state.scaler
-                train_scaled = scaler.transform(train_df[[output_var] + all_feature_cols])
-                test_scaled = scaler.transform(test_df[[output_var] + all_feature_cols])
-                X_train, y_train = train_scaled[:, 1:], train_scaled[:, 0]
-                X_test, y_test = test_scaled[:, 1:], test_scaled[:, 0]
+                train_scaled = scaler.transform(train_df[all_input_cols + all_feature_cols + [output_var]])
+                test_scaled = scaler.transform(test_df[all_input_cols + all_feature_cols + [output_var]])
+                
+                X_train = train_scaled[:, 1:1 + len(feature_cols)]
+                y_train = train_scaled[:, 0]
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
+                
+                X_test = test_scaled[:, 1:1 + len(feature_cols)]
+                y_test = test_scaled[:, 0]
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
                 model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
@@ -275,12 +290,29 @@ with col2:
                     model.load_weights(MODEL_WEIGHTS_PATH)
                     y_train_pred = model.predict(X_train)
                     y_test_pred = model.predict(X_test)
-                    y_train_pred = scaler.inverse_transform(np.hstack([y_train_pred, X_train[:, 0, :]]))[:, 0]
-                    y_test_pred = scaler.inverse_transform(np.hstack([y_test_pred, X_test[:, 0, :]]))[:, 0]
-                    y_train_actual = scaler.inverse_transform(np.hstack([y_train.reshape(-1, 1), X_train[:, 0, :]]))[:, 0]
-                    y_test_actual = scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :]]))[:, 0]
-                    y_train_pred = np.clip(y_train_pred, 0, None)
-                    y_test_pred = np.clip(y_test_pred, 0, None)
+                    # Inverse transform using the full scaled data structure
+                    train_full = np.zeros((len(y_train), len(all_input_cols) + len(all_feature_cols) + 1))
+                    train_full[:, 0] = y_train
+                    train_full[:, 1:1 + len(feature_cols)] = X_train[:, 0, :]
+                    test_full = np.zeros((len(y_test), len(all_input_cols) + len(all_feature_cols) + 1))
+                    test_full[:, 0] = y_test
+                    test_full[:, 1:1 + len(feature_cols)] = X_test[:, 0, :]
+                    
+                    y_train_pred_full = np.zeros_like(train_full)
+                    y_train_pred_full[:, 0] = y_train_pred.flatten()
+                    y_train_pred_full[:, 1:] = train_full[:, 1:]
+                    y_train_pred_inv = scaler.inverse_transform(y_train_pred_full)[:, 0]
+                    
+                    y_test_pred_full = np.zeros_like(test_full)
+                    y_test_pred_full[:, 0] = y_test_pred.flatten()
+                    y_test_pred_full[:, 1:] = test_full[:, 1:]
+                    y_test_pred_inv = scaler.inverse_transform(y_test_pred_full)[:, 0]
+                    
+                    y_train_actual = scaler.inverse_transform(train_full)[:, 0]
+                    y_test_actual = scaler.inverse_transform(test_full)[:, 0]
+                    
+                    y_train_pred = np.clip(y_train_pred_inv, 0, None)
+                    y_test_pred = np.clip(y_test_pred_inv, 0, None)
 
                     all_metrics_dict = {
                         "RMSE": lambda a, p: np.sqrt(mean_squared_error(a, p)),
@@ -316,7 +348,7 @@ with col2:
                     fig, ax = plt.subplots(2, 1, figsize=(12, 8))
                     ax[0].plot(train_dates[:len(y_train_actual)], y_train_actual, label="Actual", color="#1f77b4", linewidth=2)
                     ax[0].plot(train_dates[:len(y_train_pred)], y_train_pred, label="Predicted", color="#ff7f0e", linestyle="--", linewidth=2)
-                    ax[0].set_title(f"Training: {output_var}", fontsize=14)
+                    ax[0].set_title(f"Training Data: {output_var}", fontsize=14, pad=10)
                     ax[0].legend()
                     ax[0].grid(True, linestyle='--', alpha=0.7)
                     if date_col != "None":
@@ -324,7 +356,7 @@ with col2:
                         plt.setp(ax[0].xaxis.get_majorticklabels(), rotation=45)
                     ax[1].plot(test_dates[:len(y_test_actual)], y_test_actual, label="Actual", color="#1f77b4", linewidth=2)
                     ax[1].plot(test_dates[:len(y_test_pred)], y_test_pred, label="Predicted", color="#ff7f0e", linestyle="--", linewidth=2)
-                    ax[1].set_title(f"Testing: {output_var}", fontsize=14)
+                    ax[1].set_title(f"Testing Data: {output_var}", fontsize=14, pad=10)
                     ax[1].legend()
                     ax[1].grid(True, linestyle='--', alpha=0.7)
                     if date_col != "None":
@@ -379,7 +411,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             st.session_state.new_data_file = new_data_file
             st.session_state.new_predictions_df = None
             st.session_state.new_fig = None
-            st.session_state.selected_inputs = None
+            st.session_state.selected_inputs = []
             st.session_state.new_date_col = None
 
         if st.session_state.new_data_file:
@@ -400,13 +432,14 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             
             input_vars = st.session_state.input_vars
             output_var = st.session_state.output_var
+            training_cols = [output_var] + input_vars + st.session_state.feature_cols
             available_new_inputs = [col for col in new_df.columns if col in input_vars and (date_col is None or col != date_col)]
             if not available_new_inputs:
                 st.error("No recognized input variables found. Include: " + ", ".join(input_vars))
             else:
-                if st.session_state.selected_inputs is None:
+                if st.session_state.selected_inputs == []:
                     st.session_state.selected_inputs = available_new_inputs
-                selected_inputs = st.multiselect("🔧 Input Variables for Prediction", available_new_inputs, default=st.session_state.selected_inputs, key="new_input_vars")
+                selected_inputs = st.multiselect("🔧 Input Variables for Prediction", available_new_inputs, default=[col for col in available_new_inputs if col in st.session_state.selected_inputs] if available_new_inputs else [], key="new_input_vars")
                 st.session_state.selected_inputs = selected_inputs
                 
                 if not selected_inputs:
@@ -415,28 +448,40 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     feature_cols = []
                     for var in selected_inputs:
                         for lag in range(1, NUM_LAGGED_FEATURES + 1):
-                            new_df[f'{var}_Lag_{lag}'] = new_df[var].shift(lag)
+                            if f'{var}_Lag_{lag}' not in new_df.columns:
+                                new_df[f'{var}_Lag_{lag}'] = new_df[var].shift(lag)
                             feature_cols.append(f'{var}_Lag_{lag}')
                     new_df.dropna(inplace=True)
                     
-                    all_feature_cols = input_vars + st.session_state.feature_cols
-                    new_all_feature_cols = selected_inputs + feature_cols
-                    full_new_df = pd.DataFrame(index=new_df.index, columns=[output_var] + all_feature_cols)
+                    # Match training column order
+                    full_new_df = pd.DataFrame(index=new_df.index, columns=training_cols)
                     full_new_df[output_var] = 0
-                    for col in new_all_feature_cols:
-                        full_new_df[col] = new_df[col]
-                    full_new_df.fillna(0, inplace=True)
+                    for col in selected_inputs:
+                        if col in new_df.columns:
+                            full_new_df[col] = new_df[col]
+                    for col in feature_cols:
+                        if col in new_df.columns:
+                            full_new_df[col] = new_df[col]
+                    full_new_df = full_new_df.fillna(0)
+                    
+                    # Ensure all training columns are present, fill missing with zeros
+                    for col in training_cols:
+                        if col not in full_new_df.columns:
+                            full_new_df[col] = 0
                     
                     scaler = st.session_state.scaler
-                    new_scaled = scaler.transform(full_new_df[[output_var] + all_feature_cols])
-                    X_new = new_scaled[:, 1:]
+                    new_scaled = scaler.transform(full_new_df[training_cols])
+                    X_new = new_scaled[:, 1:1 + len(feature_cols)]
                     X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
                     
                     model = build_gru_model((X_new.shape[1], X_new.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
                     model.load_weights(MODEL_WEIGHTS_PATH)
                     y_new_pred = model.predict(X_new)
-                    y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
-                    y_new_pred = np.clip(y_new_pred, 0, None)
+                    y_new_pred_full = np.zeros((len(y_new_pred), len(training_cols)))
+                    y_new_pred_full[:, 0] = y_new_pred.flatten()
+                    y_new_pred_full[:, 1:] = new_scaled[:, 1:]
+                    y_new_pred_inv = scaler.inverse_transform(y_new_pred_full)[:, 0]
+                    y_new_pred = np.clip(y_new_pred_inv, 0, None)
                     
                     dates = new_df[date_col] if date_col else pd.RangeIndex(len(new_df))
                     st.session_state.new_predictions_df = pd.DataFrame({
@@ -444,15 +489,15 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         f"Predicted_{output_var}": y_new_pred
                     })
                     
+                    # Single subplot for new predictions
                     fig, ax = plt.subplots(figsize=(12, 4))
-                    if date_col:
-                        ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
+                    ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
+                    if date_col != "None":
                         ax.set_xlabel("Date")
-                        plt.xticks(rotation=45)
+                        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
                     else:
-                        ax.plot(y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
                         ax.set_xlabel("Index")
-                    ax.set_title(f"New Predictions: {output_var}", fontsize=14)
+                    ax.set_title(f"New Predictions: {output_var}", fontsize=14, pad=10)
                     ax.set_ylabel(output_var)
                     ax.legend()
                     ax.grid(True, linestyle='--', alpha=0.7)
