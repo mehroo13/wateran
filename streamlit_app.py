@@ -9,6 +9,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from io import BytesIO
 from tensorflow.keras.utils import plot_model
+from tensorflow.keras.callbacks import EarlyStopping
 
 # -------------------- Model Parameters --------------------
 DEFAULT_GRU_UNITS = 64
@@ -260,12 +261,14 @@ with col2:
                 y_test = test_scaled[:, 0]
                 X_test = np.concatenate([X_test_dynamic, X_test_static], axis=1).reshape((X_test_dynamic.shape[0], 1, -1))
 
+                # Add EarlyStopping to prevent overfitting
+                early_stopping = EarlyStopping(monitor='loss', patience=10, restore_best_weights=True)
                 model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
                 try:
                     with st.spinner("Training in progress..."):
                         progress_placeholder = st.empty()
                         callback = StreamlitProgressCallback(epochs, progress_placeholder)
-                        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, callbacks=[callback])
+                        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, callbacks=[callback, early_stopping])
                         os.makedirs(os.path.dirname(MODEL_WEIGHTS_PATH), exist_ok=True)
                         model.save_weights(MODEL_WEIGHTS_PATH)
                     st.success("Model trained successfully!")
@@ -445,6 +448,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             
             input_vars = st.session_state.input_vars
             output_var = st.session_state.output_var
+            training_cols = [output_var] + input_vars["dynamic"] + input_vars["static"] + st.session_state.feature_cols
             available_new_dynamic = [col for col in new_df.columns if col in input_vars["dynamic"] and (date_col is None or col != date_col)]
             available_new_static = [col for col in new_df.columns if col in input_vars["static"] and (date_col is None or col != date_col)]
             if not (available_new_dynamic or available_new_static):
@@ -467,11 +471,10 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                             feature_cols.append(f'{var}_Lag_{lag}')
                     new_df.dropna(inplace=True)
                     
-                    all_dynamic_cols = selected_dynamic + [output_var]
-                    all_feature_cols = [col for col in feature_cols if col in new_df.columns] + selected_static
-                    full_new_df = pd.DataFrame(index=new_df.index, columns=[col for col in [output_var] + all_dynamic_cols + all_feature_cols if col in new_df.columns])
+                    # Match training column order
+                    full_new_df = pd.DataFrame(index=new_df.index, columns=training_cols)
                     full_new_df[output_var] = 0
-                    for col in all_dynamic_cols:
+                    for col in selected_dynamic:
                         if col in new_df.columns:
                             full_new_df[col] = new_df[col]
                     for col in selected_static:
@@ -482,16 +485,21 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                             full_new_df[col] = new_df[col]
                     full_new_df = full_new_df.fillna(0)
                     
+                    # Ensure all training columns are present, fill missing with zeros
+                    for col in training_cols:
+                        if col not in full_new_df.columns:
+                            full_new_df[col] = 0
+                    
                     scaler = st.session_state.scaler
-                    new_scaled = scaler.transform(full_new_df[[col for col in [output_var] + all_dynamic_cols + all_feature_cols if col in new_df.columns]])
-                    X_new_dynamic = new_scaled[:, 1:1 + len(feature_cols)]
-                    X_new_static = new_scaled[:, 1 + len(feature_cols):1 + len(feature_cols) + len(selected_static)]
+                    new_scaled = scaler.transform(full_new_df[training_cols])
+                    X_new_dynamic = new_scaled[:, 1:1 + len(st.session_state.feature_cols)]
+                    X_new_static = new_scaled[:, 1 + len(st.session_state.feature_cols):1 + len(st.session_state.feature_cols) + len(static_cols)]
                     X_new = np.concatenate([X_new_dynamic, X_new_static], axis=1).reshape((X_new_dynamic.shape[0], 1, -1))
                     
                     model = build_gru_model((X_new.shape[1], X_new.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
                     model.load_weights(MODEL_WEIGHTS_PATH)
                     y_new_pred = model.predict(X_new)
-                    y_new_pred_full = np.zeros((len(y_new_pred), len([col for col in [output_var] + all_dynamic_cols + all_feature_cols if col in new_df.columns])))
+                    y_new_pred_full = np.zeros((len(y_new_pred), len(training_cols)))
                     y_new_pred_full[:, 0] = y_new_pred.flatten()
                     y_new_pred_full[:, 1:] = new_scaled[:, 1:]
                     y_new_pred_inv = scaler.inverse_transform(y_new_pred_full)[:, 0]
