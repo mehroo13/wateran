@@ -231,7 +231,7 @@ with col2:
     all_metrics = ["RMSE", "MAE", "R²", "NSE", "KGE", "PBIAS", "Peak Error", "High Value Bias", "Low Value Bias", "Volume Error"] # Generalize metric names
     if st.session_state.selected_metrics is None:
         st.session_state.selected_metrics = all_metrics
-    selected_metrics = st.multiselect("Select Metrics", all_metrics, default=st.session_state.selected_metrics, key="metrics_select")
+    selected_metrics = st.multiselect("Select Metrics", all_metrics, default=[metric for metric in st.session_state.selected_metrics if metric in all_metrics] if st.session_state.selected_metrics else all_metrics, key="metrics_select")
     st.session_state.selected_metrics = selected_metrics
     if not selected_metrics:
         st.error("Please select at least one metric.")
