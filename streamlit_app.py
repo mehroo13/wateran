@@ -108,8 +108,12 @@ with tab1:
                     st.error("Need at least two numeric columns!")
                     st.stop()
                 output_var = st.selectbox("🎯 Target Variable:", numeric_cols)
-                input_vars = st.multiselect("🔧 Input Variables:", [col for col in numeric_cols if col != output_var], 
-                                           default=[numeric_cols[0]])
+                
+                # Define input options and default value
+                input_options = [col for col in numeric_cols if col != output_var]
+                default_input = [numeric_cols[0]] if numeric_cols[0] != output_var else ([input_options[0]] if input_options else [])
+                
+                input_vars = st.multiselect("🔧 Input Variables:", input_options, default=default_input)
                 if not input_vars:
                     st.error("Select at least one input variable!")
                     st.stop()
