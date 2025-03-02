@@ -252,12 +252,12 @@ with col2:
                 # Prepare data with dynamic (lagged) and static features
                 X_train_dynamic = train_scaled[:, 1:1 + len(feature_cols)]  # Lagged dynamic features
                 X_train_static = train_scaled[:, 1 + len(feature_cols):1 + len(feature_cols) + len(static_cols)]  # Static features
-                y_train = train_scaled[:, -1]  # Output variable
+                y_train = train_scaled[:, 0]  # Output variable (first column after scaling)
                 X_train = np.concatenate([X_train_dynamic, X_train_static], axis=1).reshape((X_train_dynamic.shape[0], 1, -1))
                 
                 X_test_dynamic = test_scaled[:, 1:1 + len(feature_cols)]
                 X_test_static = test_scaled[:, 1 + len(feature_cols):1 + len(feature_cols) + len(static_cols)]
-                y_test = test_scaled[:, -1]
+                y_test = test_scaled[:, 0]
                 X_test = np.concatenate([X_test_dynamic, X_test_static], axis=1).reshape((X_test_dynamic.shape[0], 1, -1))
 
                 model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
@@ -288,12 +288,12 @@ with col2:
                 
                 X_train_dynamic = train_scaled[:, 1:1 + len(feature_cols)]
                 X_train_static = train_scaled[:, 1 + len(feature_cols):1 + len(feature_cols) + len(static_cols)]
-                y_train = train_scaled[:, -1]
+                y_train = train_scaled[:, 0]
                 X_train = np.concatenate([X_train_dynamic, X_train_static], axis=1).reshape((X_train_dynamic.shape[0], 1, -1))
                 
                 X_test_dynamic = test_scaled[:, 1:1 + len(feature_cols)]
                 X_test_static = test_scaled[:, 1 + len(feature_cols):1 + len(feature_cols) + len(static_cols)]
-                y_test = test_scaled[:, -1]
+                y_test = test_scaled[:, 0]
                 X_test = np.concatenate([X_test_dynamic, X_test_static], axis=1).reshape((X_test_dynamic.shape[0], 1, -1))
 
                 model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
@@ -301,12 +301,31 @@ with col2:
                     model.load_weights(MODEL_WEIGHTS_PATH)
                     y_train_pred = model.predict(X_train)
                     y_test_pred = model.predict(X_test)
-                    y_train_pred = scaler.inverse_transform(np.hstack([y_train_pred.reshape(-1, 1), X_train[:, 0, :-len(static_cols)]]))[:, 0]
-                    y_test_pred = scaler.inverse_transform(np.hstack([y_test_pred.reshape(-1, 1), X_test[:, 0, :-len(static_cols)]]))[:, 0]
-                    y_train_actual = scaler.inverse_transform(np.hstack([y_train.reshape(-1, 1), X_train[:, 0, :-len(static_cols)]]))[:, 0]
-                    y_test_actual = scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :-len(static_cols)]]))[:, 0]
-                    y_train_pred = np.clip(y_train_pred, 0, None)
-                    y_test_pred = np.clip(y_test_pred, 0, None)
+                    # Inverse transform using the full scaled data structure
+                    train_full = np.zeros((len(y_train), len(all_dynamic_cols) + len(all_feature_cols) + 1))
+                    train_full[:, 0] = y_train
+                    train_full[:, 1:1 + len(feature_cols)] = X_train_dynamic
+                    train_full[:, 1 + len(feature_cols):1 + len(feature_cols) + len(static_cols)] = X_train_static
+                    test_full = np.zeros((len(y_test), len(all_dynamic_cols) + len(all_feature_cols) + 1))
+                    test_full[:, 0] = y_test
+                    test_full[:, 1:1 + len(feature_cols)] = X_test_dynamic
+                    test_full[:, 1 + len(feature_cols):1 + len(feature_cols) + len(static_cols)] = X_test_static
+                    
+                    y_train_pred_full = np.zeros_like(train_full)
+                    y_train_pred_full[:, 0] = y_train_pred.flatten()
+                    y_train_pred_full[:, 1:] = train_full[:, 1:]
+                    y_train_pred_inv = scaler.inverse_transform(y_train_pred_full)[:, 0]
+                    
+                    y_test_pred_full = np.zeros_like(test_full)
+                    y_test_pred_full[:, 0] = y_test_pred.flatten()
+                    y_test_pred_full[:, 1:] = test_full[:, 1:]
+                    y_test_pred_inv = scaler.inverse_transform(y_test_pred_full)[:, 0]
+                    
+                    y_train_actual = scaler.inverse_transform(train_full)[:, 0]
+                    y_test_actual = scaler.inverse_transform(test_full)[:, 0]
+                    
+                    y_train_pred = np.clip(y_train_pred_inv, 0, None)
+                    y_test_pred = np.clip(y_test_pred_inv, 0, None)
 
                     all_metrics_dict = {
                         "RMSE": lambda a, p: np.sqrt(mean_squared_error(a, p)),
@@ -466,8 +485,11 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     model = build_gru_model((X_new.shape[1], X_new.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
                     model.load_weights(MODEL_WEIGHTS_PATH)
                     y_new_pred = model.predict(X_new)
-                    y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred.reshape(-1, 1), X_new[:, 0, :-len(selected_static)]]))[:, 0]
-                    y_new_pred = np.clip(y_new_pred, 0, None)
+                    y_new_pred_full = np.zeros((len(y_new_pred), len(all_dynamic_cols) + len(all_feature_cols) + 1))
+                    y_new_pred_full[:, 0] = y_new_pred.flatten()
+                    y_new_pred_full[:, 1:] = new_scaled[:, 1:]
+                    y_new_pred_inv = scaler.inverse_transform(y_new_pred_full)[:, 0]
+                    y_new_pred = np.clip(y_new_pred_inv, 0, None)
                     
                     dates = new_df[date_col] if date_col else pd.RangeIndex(len(new_df))
                     st.session_state.new_predictions_df = pd.DataFrame({
