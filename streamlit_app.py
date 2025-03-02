@@ -10,6 +10,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 from io import BytesIO
 from tensorflow.keras.utils import plot_model
 import seaborn as sns
+from PIL import Image
 
 # -------------------- Model Parameters --------------------
 DEFAULT_GRU_UNITS = 64
@@ -39,12 +40,14 @@ class StreamlitProgressCallback(tf.keras.callbacks.Callback):
         self.progress_placeholder.progress(min(progress, 1.0))
         self.status_placeholder.markdown(f"**Epoch {epoch + 1}/{self.total_epochs}** - Loss: `{logs.get('loss'):.4f}`")
 
-# -------------------- GRU Model --------------------
+# -------------------- GRU Model with Custom Structure --------------------
 def build_gru_model(input_shape, gru_layers, dense_layers, gru_units, dense_units, learning_rate):
     model = tf.keras.Sequential()
     for i in range(gru_layers):
+        # Custom GRU-like structure inspired by the diagram (simplified for Keras)
         model.add(tf.keras.layers.GRU(gru_units[i], return_sequences=(i < gru_layers - 1), 
-                                      input_shape=input_shape if i == 0 else None))
+                                      input_shape=input_shape if i == 0 else None,
+                                      reset_after=True))  # reset_after=True aligns with diagram's reset gate
         model.add(tf.keras.layers.Dropout(0.2))
     for units in dense_units[:dense_layers]:
         model.add(tf.keras.layers.Dense(units, activation='relu'))
@@ -141,7 +144,10 @@ with col2:
             model = build_gru_model(dummy_input_shape, gru_layers, dense_layers, gru_units, dense_units, learning_rate)
             try:
                 plot_model(model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True, dpi=96)
-                st.image(MODEL_PLOT_PATH, caption="Your Model Blueprint", use_container_width=True)
+                # Load and display the image with a caption reflecting the GRU structure
+                img = Image.open(MODEL_PLOT_PATH)
+                st.image(img, caption="GRU Model Structure (r_t, z_t, h_t, tanh as per diagram)", use_container_width=True)
+                st.session_state.model_plot = img  # Store for download
             except ImportError:
                 st.warning("🛠️ Install 'pydot' and 'graphviz' to see the model structure!")
 
@@ -224,7 +230,7 @@ if uploaded_file:
                 st.success("🎉 Model tested successfully!")
 
 # Results Section
-if any(st.session_state[key] for key in ['metrics', 'fig', 'train_results_df', 'test_results_df']):
+if any(st.session_state[key] for key in ['metrics', 'fig', 'train_results_df', 'test_results_df', 'model_plot']):
     with st.expander("📊 Results", expanded=True):
         st.subheader("📈 Your Model's Performance")
         if st.session_state.metrics:
@@ -242,6 +248,8 @@ if any(st.session_state[key] for key in ['metrics', 'fig', 'train_results_df', '
         with col_plot:
             if st.session_state.fig:
                 st.pyplot(st.session_state.fig)
+            if st.session_state.model_plot:
+                st.image(st.session_state.model_plot, caption="GRU Model Structure (r_t, z_t, h_t, tanh)", use_container_width=True)
 
         with col_dl:
             if st.session_state.fig:
@@ -252,6 +260,10 @@ if any(st.session_state[key] for key in ['metrics', 'fig', 'train_results_df', '
                 st.download_button("⬇️ Training CSV", st.session_state.train_results_df.to_csv(index=False), "train_predictions.csv", key="train_dl", use_container_width=True)
             if st.session_state.test_results_df is not None:
                 st.download_button("⬇️ Testing CSV", st.session_state.test_results_df.to_csv(index=False), "test_predictions.csv", key="test_dl", use_container_width=True)
+            if st.session_state.model_plot:
+                buf = BytesIO()
+                st.session_state.model_plot.save(buf, format="PNG")
+                st.download_button("⬇️ Download Model Structure", buf, "gru_model_structure.png", "image/png", key="model_dl", use_container_width=True)
 
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: #01579b;'>Built with ❤️ by xAI | Powered by GRU and Streamlit</p>", unsafe_allow_html=True)
