@@ -287,7 +287,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
     with st.expander("🔮 Predict New Data", expanded=False):
         st.subheader("Upload New Data for Prediction")
         new_data_file = st.file_uploader("Choose an Excel file with new input data", type=["xlsx"], key="new_data")
-        if new_data_file and st.button("🔍 Predict"):
+        if new_data_file:
             new_df = pd.read_excel(new_data_file)
             st.write("**New Data Preview:**", new_df.head())
             
@@ -295,74 +295,84 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             input_vars = st.session_state.input_vars
             output_var = st.session_state.output_var
             
-            # Check available input columns in new data
-            new_input_cols = [col for col in new_df.columns if col in input_vars]
-            if not new_input_cols:
+            # Identify available input columns in new data
+            available_new_inputs = [col for col in new_df.columns if col in input_vars]
+            if not available_new_inputs:
                 st.error("No recognized input variables found in the new data. Please include at least one of: " + ", ".join(input_vars))
             else:
-                # Generate lagged features only for available inputs
-                feature_cols = []
-                for var in new_input_cols:
-                    for lag in range(1, NUM_LAGGED_FEATURES + 1):
-                        new_df[f'{var}_Lag_{lag}'] = new_df[var].shift(lag)
-                        feature_cols.append(f'{var}_Lag_{lag}')
-                new_df.dropna(inplace=True)
-                
-                # Prepare all features used in training
-                all_feature_cols = input_vars + st.session_state.feature_cols
-                new_all_feature_cols = new_input_cols + feature_cols
-                
-                # Create a DataFrame with all expected columns, filling missing ones with zeros
-                full_new_df = pd.DataFrame(index=new_df.index, columns=[output_var] + all_feature_cols)
-                full_new_df[output_var] = 0  # Dummy value for output, not used in prediction
-                for col in new_all_feature_cols:
-                    full_new_df[col] = new_df[col]
-                full_new_df.fillna(0, inplace=True)  # Fill missing inputs/lags with 0
-                
-                # Scale the data
-                scaler = st.session_state.scaler
-                new_scaled = scaler.transform(full_new_df[[output_var] + all_feature_cols])
-                X_new = new_scaled[:, 1:]  # Exclude the dummy output column
-                X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
-                
-                # Predict
-                model = build_gru_model(
-                    (X_new.shape[1], X_new.shape[2]),
-                    st.session_state.gru_layers,
-                    st.session_state.dense_layers,
-                    st.session_state.gru_units,
-                    st.session_state.dense_units,
-                    st.session_state.learning_rate
+                # Let user select which inputs to use for prediction
+                selected_inputs = st.multiselect(
+                    "🔧 Select Input Variables for Prediction:",
+                    available_new_inputs,
+                    default=available_new_inputs[:1],  # Default to first available input
+                    key="new_input_vars"
                 )
-                model.load_weights(MODEL_WEIGHTS_PATH)
-                y_new_pred = model.predict(X_new)
-                y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
-                y_new_pred = np.clip(y_new_pred, 0, None)
-                
-                # Store and display results
-                st.session_state.new_predictions_df = pd.DataFrame({
-                    f"Predicted_{output_var}": y_new_pred
-                })
-                fig, ax = plt.subplots(figsize=(12, 4))
-                ax.plot(y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
-                ax.set_title(f"Predictions for New Data: {output_var}", fontsize=14, pad=10)
-                ax.legend()
-                ax.grid(True, linestyle='--', alpha=0.7)
-                plt.tight_layout()
-                st.session_state.new_fig = fig
-                
-                st.subheader("New Data Predictions")
-                st.write(st.session_state.new_predictions_df)
-                col_new_plot, col_new_dl = st.columns([3, 1])
-                with col_new_plot:
-                    st.pyplot(st.session_state.new_fig)
-                with col_new_dl:
-                    buf = BytesIO()
-                    st.session_state.new_fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
-                    st.download_button("⬇️ Download New Prediction Plot", buf.getvalue(), "new_prediction_plot.png", "image/png", key="new_plot_dl")
-                    new_csv = st.session_state.new_predictions_df.to_csv(index=False)
-                    st.download_button("⬇️ Download New Predictions CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
-                st.success("Predictions generated successfully!")
+                if not selected_inputs:
+                    st.error("Please select at least one input variable for prediction.")
+                elif st.button("🔍 Predict"):
+                    # Generate lagged features only for selected inputs
+                    feature_cols = []
+                    for var in selected_inputs:
+                        for lag in range(1, NUM_LAGGED_FEATURES + 1):
+                            new_df[f'{var}_Lag_{lag}'] = new_df[var].shift(lag)
+                            feature_cols.append(f'{var}_Lag_{lag}')
+                    new_df.dropna(inplace=True)
+                    
+                    # Prepare all features used in training
+                    all_feature_cols = input_vars + st.session_state.feature_cols
+                    new_all_feature_cols = selected_inputs + feature_cols
+                    
+                    # Create a DataFrame with all expected columns, filling missing ones with zeros
+                    full_new_df = pd.DataFrame(index=new_df.index, columns=[output_var] + all_feature_cols)
+                    full_new_df[output_var] = 0  # Dummy value for output, not used in prediction
+                    for col in new_all_feature_cols:
+                        full_new_df[col] = new_df[col]
+                    full_new_df.fillna(0, inplace=True)  # Fill missing inputs/lags with 0
+                    
+                    # Scale the data
+                    scaler = st.session_state.scaler
+                    new_scaled = scaler.transform(full_new_df[[output_var] + all_feature_cols])
+                    X_new = new_scaled[:, 1:]  # Exclude the dummy output column
+                    X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
+                    
+                    # Predict
+                    model = build_gru_model(
+                        (X_new.shape[1], X_new.shape[2]),
+                        st.session_state.gru_layers,
+                        st.session_state.dense_layers,
+                        st.session_state.gru_units,
+                        st.session_state.dense_units,
+                        st.session_state.learning_rate
+                    )
+                    model.load_weights(MODEL_WEIGHTS_PATH)
+                    y_new_pred = model.predict(X_new)
+                    y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
+                    y_new_pred = np.clip(y_new_pred, 0, None)
+                    
+                    # Store and display results
+                    st.session_state.new_predictions_df = pd.DataFrame({
+                        f"Predicted_{output_var}": y_new_pred
+                    })
+                    fig, ax = plt.subplots(figsize=(12, 4))
+                    ax.plot(y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
+                    ax.set_title(f"Predictions for New Data: {output_var}", fontsize=14, pad=10)
+                    ax.legend()
+                    ax.grid(True, linestyle='--', alpha=0.7)
+                    plt.tight_layout()
+                    st.session_state.new_fig = fig
+                    
+                    st.subheader("New Data Predictions")
+                    st.write(st.session_state.new_predictions_df)
+                    col_new_plot, col_new_dl = st.columns([3, 1])
+                    with col_new_plot:
+                        st.pyplot(st.session_state.new_fig)
+                    with col_new_dl:
+                        buf = BytesIO()
+                        st.session_state.new_fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
+                        st.download_button("⬇️ Download New Prediction Plot", buf.getvalue(), "new_prediction_plot.png", "image/png", key="new_plot_dl")
+                        new_csv = st.session_state.new_predictions_df.to_csv(index=False)
+                        st.download_button("⬇️ Download New Predictions CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
+                    st.success("Predictions generated successfully!")
 
 # Footer
 st.markdown("---")
