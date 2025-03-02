@@ -6,7 +6,7 @@ import os
 import tempfile
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from io import BytesIO
 from tensorflow.keras.utils import plot_model
 
@@ -165,6 +165,21 @@ with col2:
             units = st.number_input(f"Dense Layer {i+1} Units:", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}")
             dense_units.append(units)
         learning_rate = st.number_input("Learning Rate:", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f")
+        
+        st.subheader("Select Metrics for Evaluation")
+        all_metrics = ["RMSE", "MAE", "R²", "NSE", "KGE", "PBIAS", "Peak Flow Error", "High Flow Bias", "Low Flow Bias", "Volume Error"]
+        if st.session_state.selected_metrics is None:
+            st.session_state.selected_metrics = all_metrics
+        selected_metrics = st.multiselect(
+            "Choose metrics to compute:",
+            all_metrics,
+            default=st.session_state.selected_metrics,
+            key="metrics_select"
+        )
+        st.session_state.selected_metrics = selected_metrics
+        if not selected_metrics:
+            st.error("Please select at least one metric for evaluation.")
+            st.stop()
 
 # Process training data if uploaded
 if uploaded_file:
@@ -265,45 +280,27 @@ if uploaded_file:
                 y_train_pred = np.clip(y_train_pred, 0, None)
                 y_test_pred = np.clip(y_test_pred, 0, None)
 
-                # Calculate all metrics
-                metrics = {
-                    "RMSE": {
-                        "Training": np.sqrt(mean_squared_error(y_train_actual, y_train_pred)),
-                        "Testing": np.sqrt(mean_squared_error(y_test_actual, y_test_pred))
-                    },
-                    "MAE": {
-                        "Training": mean_absolute_error(y_train_actual, y_train_pred),
-                        "Testing": mean_absolute_error(y_test_actual, y_test_pred)
-                    },
-                    "NSE": {
-                        "Training": nse(y_train_actual, y_train_pred),
-                        "Testing": nse(y_test_actual, y_test_pred)
-                    },
-                    "KGE": {
-                        "Training": kge(y_train_actual, y_train_pred),
-                        "Testing": kge(y_test_actual, y_test_pred)
-                    },
-                    "PBIAS": {
-                        "Training": pbias(y_train_actual, y_train_pred),
-                        "Testing": pbias(y_test_actual, y_test_pred)
-                    },
-                    "Peak Flow Error": {
-                        "Training": peak_flow_error(y_train_actual, y_train_pred),
-                        "Testing": peak_flow_error(y_test_actual, y_test_pred)
-                    },
-                    "High Flow Bias": {
-                        "Training": high_flow_bias(y_train_actual, y_train_pred),
-                        "Testing": high_flow_bias(y_test_actual, y_test_pred)
-                    },
-                    "Low Flow Bias": {
-                        "Training": low_flow_bias(y_train_actual, y_train_pred),
-                        "Testing": low_flow_bias(y_test_actual, y_test_pred)
-                    },
-                    "Volume Error": {
-                        "Training": volume_error(y_train_actual, y_train_pred),
-                        "Testing": volume_error(y_test_actual, y_test_pred)
-                    }
+                # Define all possible metrics
+                all_metrics_dict = {
+                    "RMSE": lambda a, p: np.sqrt(mean_squared_error(a, p)),
+                    "MAE": lambda a, p: mean_absolute_error(a, p),
+                    "R²": lambda a, p: r2_score(a, p),
+                    "NSE": nse,
+                    "KGE": kge,
+                    "PBIAS": pbias,
+                    "Peak Flow Error": peak_flow_error,
+                    "High Flow Bias": high_flow_bias,
+                    "Low Flow Bias": low_flow_bias,
+                    "Volume Error": volume_error
                 }
+
+                # Calculate only selected metrics
+                metrics = {}
+                for metric in st.session_state.selected_metrics:
+                    metrics[metric] = {
+                        "Training": all_metrics_dict[metric](y_train_actual, y_train_pred),
+                        "Testing": all_metrics_dict[metric](y_test_actual, y_test_pred)
+                    }
                 st.session_state.metrics = metrics
 
                 dates = df[date_col] if date_col != "None" else pd.RangeIndex(len(df))
@@ -344,30 +341,16 @@ if uploaded_file:
 # Results Section
 if st.session_state.metrics or st.session_state.fig or st.session_state.train_results_df or st.session_state.test_results_df:
     with st.expander("📊 Training and Testing Results", expanded=True):
-        if st.session_state.metrics is not None:  # Check if metrics are available
+        if st.session_state.metrics is not None:
             st.subheader("📏 Model Performance Metrics")
-            all_metrics = list(st.session_state.metrics.keys())
-            if st.session_state.selected_metrics is None:
-                st.session_state.selected_metrics = all_metrics
-            selected_metrics = st.multiselect(
-                "Select Metrics to Display:",
-                all_metrics,
-                default=st.session_state.selected_metrics,
-                key="metrics_select"
-            )
-            st.session_state.selected_metrics = selected_metrics
-
-            if selected_metrics:
-                metrics_df = pd.DataFrame({
-                    "Metric": selected_metrics,
-                    "Training": [f"{st.session_state.metrics[m]['Training']:.4f}" for m in selected_metrics],
-                    "Testing": [f"{st.session_state.metrics[m]['Testing']:.4f}" for m in selected_metrics]
-                })
-                st.table(metrics_df.style.set_properties(**{'text-align': 'center'}).set_table_styles([
-                    {'selector': 'th', 'props': [('font-weight', 'bold'), ('text-align', 'center')]}
-                ]))
-            else:
-                st.warning("Please select at least one metric to display.")
+            metrics_df = pd.DataFrame({
+                "Metric": st.session_state.selected_metrics,
+                "Training": [f"{st.session_state.metrics[m]['Training']:.4f}" for m in st.session_state.selected_metrics],
+                "Testing": [f"{st.session_state.metrics[m]['Testing']:.4f}" for m in st.session_state.selected_metrics]
+            })
+            st.table(metrics_df.style.set_properties(**{'text-align': 'center'}).set_table_styles([
+                {'selector': 'th', 'props': [('font-weight', 'bold'), ('text-align', 'center')]}
+            ]))
         else:
             st.info("No metrics available yet. Please test the model first.")
 
