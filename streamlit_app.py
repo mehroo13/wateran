@@ -106,7 +106,7 @@ if 'model_plot' not in st.session_state:
 if 'scaler' not in st.session_state:
     st.session_state.scaler = None
 if 'input_vars' not in st.session_state:
-    st.session_state.input_vars = {"dynamic": [], "static": []}
+    st.session_state.input_vars = []
 if 'output_var' not in st.session_state:
     st.session_state.output_var = None
 if 'new_predictions_df' not in st.session_state:
@@ -128,7 +128,7 @@ if 'feature_cols' not in st.session_state:
 if 'new_data_file' not in st.session_state:
     st.session_state.new_data_file = None
 if 'selected_inputs' not in st.session_state:
-    st.session_state.selected_inputs = {"dynamic": [], "static": []}
+    st.session_state.selected_inputs = []
 if 'new_date_col' not in st.session_state:
     st.session_state.new_date_col = None
 if 'selected_metrics' not in st.session_state:
@@ -162,37 +162,22 @@ with col1:
         # Numeric columns for variable selection
         numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and (date_col is None or col != date_col)]
         if len(numeric_cols) < 2:
-            st.error("Dataset requires at least two numeric columns.")
+            st.error("Dataset requires at least one input and one output variable (numeric columns).")
             st.stop()
         
-        # Variable selection (Dynamic vs Static)
+        # Variable selection
         output_var = st.selectbox("🎯 Output Variable", numeric_cols, key="output_var_train")
         available_input_cols = [col for col in numeric_cols if col != output_var]
         if not available_input_cols:
-            st.error("No input variables available.")
+            st.error("No input variables available. Select a different output variable or check your dataset.")
             st.stop()
+        input_vars = st.multiselect("🔧 Input Variables", available_input_cols, default=available_input_cols[:1] if available_input_cols else [], key="input_vars")
+        if not input_vars:
+            st.warning("No input variables selected. At least one is recommended for analysis.")
 
-        st.subheader("🔧 Variable Classification")
-        # Suggested defaults based on your dataset
-        suggested_dynamic = ["Rainfall", "Maximum temperature", "Minimum temperature"]
-        suggested_static = ["Land Use Percentage Classes", "Soil Percentage Classes", "Slope", "Drainage Density (km/km²)"]
-        # Use intersection of suggested defaults with available columns
-        default_dynamic = [col for col in suggested_dynamic if col in available_input_cols]
-        default_static = [col for col in suggested_static if col in available_input_cols]
-        
-        dynamic_cols = st.multiselect("Dynamic Variables (e.g., Precipitation, Temperature)", available_input_cols, default=default_dynamic if default_dynamic else [], key="dynamic_vars")
-        static_cols = st.multiselect("Static Variables (e.g., Land Use, Soil, Slope)", available_input_cols, default=default_static if default_static else [], key="static_vars")
-        
-        # Validate no overlap and at least one input
-        all_selected = dynamic_cols + static_cols
-        if not all_selected or len(set(all_selected)) != len(all_selected):
-            st.error("Select at least one unique input variable (no overlap between dynamic and static).")
-            st.stop()
-        input_vars = {"dynamic": dynamic_cols, "static": static_cols}
-
-        # Generate lagged features for dynamic variables only
+        # Generate lagged features for all input variables
         feature_cols = []
-        for var in dynamic_cols + [output_var]:
+        for var in input_vars + [output_var]:
             for lag in range(1, NUM_LAGGED_FEATURES + 1):
                 df[f'{var}_Lag_{lag}'] = df[var].shift(lag)
                 feature_cols.append(f'{var}_Lag_{lag}')
@@ -208,12 +193,12 @@ with col1:
 with col2:
     st.subheader("⚙️ Model Configuration")
     
-    # Training Parameters
+    # Training Parameters (always visible)
     epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10)
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8)
     train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
     
-    # Model Architecture
+    # Model Architecture (always visible)
     with st.expander("Model Architecture", expanded=False):
         gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=1, step=1)
         gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}") for i in range(gru_layers)]
@@ -221,7 +206,7 @@ with col2:
         dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(dense_layers)]
         learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f")
     
-    # Metrics Selection
+    # Metrics Selection (always visible)
     st.markdown("**Evaluation Metrics**")
     all_metrics = ["RMSE", "MAE", "R²", "NSE", "KGE", "PBIAS", "Peak Flow Error", "High Flow Bias", "Low Flow Bias", "Volume Error"]
     if st.session_state.selected_metrics is None:
@@ -239,31 +224,28 @@ with col2:
     st.session_state.dense_units = dense_units
     st.session_state.learning_rate = learning_rate
 
-    # Training and Testing Buttons
+    # Training and Testing Buttons (visible only with data)
     if uploaded_file:
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             if st.button("🚀 Train Model"):
                 train_size = int(len(df) * train_split)
                 train_df, test_df = df[:train_size], df[train_size:]
-                all_dynamic_cols = dynamic_cols + [output_var]
-                all_feature_cols = feature_cols + static_cols
+                all_input_cols = input_vars + [output_var]
+                all_feature_cols = feature_cols
                 
                 scaler = MinMaxScaler()
-                train_scaled = scaler.fit_transform(train_df[all_dynamic_cols + all_feature_cols + [output_var]])
-                test_scaled = scaler.transform(test_df[all_dynamic_cols + all_feature_cols + [output_var]])
+                train_scaled = scaler.fit_transform(train_df[all_input_cols + all_feature_cols + [output_var]])
+                test_scaled = scaler.transform(test_df[all_input_cols + all_feature_cols + [output_var]])
                 st.session_state.scaler = scaler
                 
-                # Prepare data with dynamic (lagged) and static features
-                X_train_dynamic = train_scaled[:, 1:1 + len(feature_cols)]  # Lagged dynamic features
-                X_train_static = train_scaled[:, 1 + len(feature_cols):1 + len(feature_cols) + len(static_cols)]  # Static features
-                y_train = train_scaled[:, -1]  # Output variable
-                X_train = np.concatenate([X_train_dynamic, X_train_static], axis=1).reshape((X_train_dynamic.shape[0], 1, -1))
+                X_train = train_scaled[:, 1:1 + len(feature_cols)]
+                y_train = train_scaled[:, -1]
+                X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 
-                X_test_dynamic = test_scaled[:, 1:1 + len(feature_cols)]
-                X_test_static = test_scaled[:, 1 + len(feature_cols):1 + len(feature_cols) + len(static_cols)]
+                X_test = test_scaled[:, 1:1 + len(feature_cols)]
                 y_test = test_scaled[:, -1]
-                X_test = np.concatenate([X_test_dynamic, X_test_static], axis=1).reshape((X_test_dynamic.shape[0], 1, -1))
+                X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
                 model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
                 try:
@@ -284,32 +266,30 @@ with col2:
                     st.stop()
                 train_size = int(len(df) * train_split)
                 train_df, test_df = df[:train_size], df[train_size:]
-                all_dynamic_cols = dynamic_cols + [output_var]
-                all_feature_cols = feature_cols + static_cols
+                all_input_cols = input_vars + [output_var]
+                all_feature_cols = feature_cols
                 
                 scaler = st.session_state.scaler
-                train_scaled = scaler.transform(train_df[all_dynamic_cols + all_feature_cols + [output_var]])
-                test_scaled = scaler.transform(test_df[all_dynamic_cols + all_feature_cols + [output_var]])
+                train_scaled = scaler.transform(train_df[all_input_cols + all_feature_cols + [output_var]])
+                test_scaled = scaler.transform(test_df[all_input_cols + all_feature_cols + [output_var]])
                 
-                X_train_dynamic = train_scaled[:, 1:1 + len(feature_cols)]
-                X_train_static = train_scaled[:, 1 + len(feature_cols):1 + len(feature_cols) + len(static_cols)]
+                X_train = train_scaled[:, 1:1 + len(feature_cols)]
                 y_train = train_scaled[:, -1]
-                X_train = np.concatenate([X_train_dynamic, X_train_static], axis=1).reshape((X_train_dynamic.shape[0], 1, -1))
+                X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 
-                X_test_dynamic = test_scaled[:, 1:1 + len(feature_cols)]
-                X_test_static = test_scaled[:, 1 + len(feature_cols):1 + len(feature_cols) + len(static_cols)]
+                X_test = test_scaled[:, 1:1 + len(feature_cols)]
                 y_test = test_scaled[:, -1]
-                X_test = np.concatenate([X_test_dynamic, X_test_static], axis=1).reshape((X_test_dynamic.shape[0], 1, -1))
+                X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
                 model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
                 try:
                     model.load_weights(MODEL_WEIGHTS_PATH)
                     y_train_pred = model.predict(X_train)
                     y_test_pred = model.predict(X_test)
-                    y_train_pred = scaler.inverse_transform(np.hstack([y_train_pred.reshape(-1, 1), X_train[:, 0, :-len(static_cols)]]))[:, 0]
-                    y_test_pred = scaler.inverse_transform(np.hstack([y_test_pred.reshape(-1, 1), X_test[:, 0, :-len(static_cols)]]))[:, 0]
-                    y_train_actual = scaler.inverse_transform(np.hstack([y_train.reshape(-1, 1), X_train[:, 0, :-len(static_cols)]]))[:, 0]
-                    y_test_actual = scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :-len(static_cols)]]))[:, 0]
+                    y_train_pred = scaler.inverse_transform(np.hstack([y_train_pred, X_train[:, 0, :]]))[:, 0]
+                    y_test_pred = scaler.inverse_transform(np.hstack([y_test_pred, X_test[:, 0, :]]))[:, 0]
+                    y_train_actual = scaler.inverse_transform(np.hstack([y_train.reshape(-1, 1), X_train[:, 0, :]]))[:, 0]
+                    y_test_actual = scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :]]))[:, 0]
                     y_train_pred = np.clip(y_train_pred, 0, None)
                     y_test_pred = np.clip(y_test_pred, 0, None)
 
@@ -410,7 +390,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             st.session_state.new_data_file = new_data_file
             st.session_state.new_predictions_df = None
             st.session_state.new_fig = None
-            st.session_state.selected_inputs = {"dynamic": [], "static": []}
+            st.session_state.selected_inputs = []
             st.session_state.new_date_col = None
 
         if st.session_state.new_data_file:
@@ -431,47 +411,44 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             
             input_vars = st.session_state.input_vars
             output_var = st.session_state.output_var
-            available_new_dynamic = [col for col in new_df.columns if col in input_vars["dynamic"] and (date_col is None or col != date_col)]
-            available_new_static = [col for col in new_df.columns if col in input_vars["static"] and (date_col is None or col != date_col)]
-            if not (available_new_dynamic or available_new_static):
-                st.error("No recognized input variables found. Include: " + ", ".join(input_vars['dynamic'] + input_vars['static']))
+            available_new_inputs = [col for col in new_df.columns if col in input_vars and (date_col is None or col != date_col)]
+            if not available_new_inputs:
+                st.error("No recognized input variables found. Include: " + ", ".join(input_vars))
             else:
-                if st.session_state.selected_inputs["dynamic"] == [] and st.session_state.selected_inputs["static"] == []:
-                    st.session_state.selected_inputs = {"dynamic": available_new_dynamic, "static": available_new_static}
-                selected_dynamic = st.multiselect("🔧 Dynamic Input Variables", available_new_dynamic, default=[col for col in available_new_dynamic if col in st.session_state.selected_inputs["dynamic"]] if available_new_dynamic else [], key="new_dynamic_vars")
-                selected_static = st.multiselect("🔧 Static Input Variables", available_new_static, default=[col for col in available_new_static if col in st.session_state.selected_inputs["static"]] if available_new_static else [], key="new_static_vars")
-                st.session_state.selected_inputs = {"dynamic": selected_dynamic, "static": selected_static}
+                if st.session_state.selected_inputs == []:
+                    st.session_state.selected_inputs = available_new_inputs
+                selected_inputs = st.multiselect("🔧 Input Variables for Prediction", available_new_inputs, default=[col for col in available_new_inputs if col in st.session_state.selected_inputs] if available_new_inputs else [], key="new_input_vars")
+                st.session_state.selected_inputs = selected_inputs
                 
-                if not (selected_dynamic or selected_static):
-                    st.error("Select at least one input variable (dynamic or static).")
+                if not selected_inputs:
+                    st.error("Select at least one input variable.")
                 elif st.button("🔍 Predict"):
                     feature_cols = []
-                    for var in selected_dynamic:
+                    for var in selected_inputs:
                         for lag in range(1, NUM_LAGGED_FEATURES + 1):
                             new_df[f'{var}_Lag_{lag}'] = new_df[var].shift(lag)
                             feature_cols.append(f'{var}_Lag_{lag}')
                     new_df.dropna(inplace=True)
                     
-                    all_dynamic_cols = selected_dynamic + [output_var]
-                    all_feature_cols = feature_cols + selected_static
-                    full_new_df = pd.DataFrame(index=new_df.index, columns=[output_var] + all_dynamic_cols + all_feature_cols)
+                    all_input_cols = selected_inputs + [output_var]
+                    all_feature_cols = feature_cols
+                    full_new_df = pd.DataFrame(index=new_df.index, columns=[output_var] + all_input_cols + all_feature_cols)
                     full_new_df[output_var] = 0
-                    for col in all_dynamic_cols + selected_static:
+                    for col in all_input_cols:
                         full_new_df[col] = new_df[col]
                     for col in feature_cols:
                         full_new_df[col] = new_df[col]
                     full_new_df.fillna(0, inplace=True)
                     
                     scaler = st.session_state.scaler
-                    new_scaled = scaler.transform(full_new_df[[output_var] + all_dynamic_cols + all_feature_cols])
-                    X_new_dynamic = new_scaled[:, 1:1 + len(feature_cols)]
-                    X_new_static = new_scaled[:, 1 + len(feature_cols):1 + len(feature_cols) + len(selected_static)]
-                    X_new = np.concatenate([X_new_dynamic, X_new_static], axis=1).reshape((X_new_dynamic.shape[0], 1, -1))
+                    new_scaled = scaler.transform(full_new_df[[output_var] + all_input_cols + all_feature_cols])
+                    X_new = new_scaled[:, 1:1 + len(feature_cols)]
+                    X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
                     
                     model = build_gru_model((X_new.shape[1], X_new.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
                     model.load_weights(MODEL_WEIGHTS_PATH)
                     y_new_pred = model.predict(X_new)
-                    y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred.reshape(-1, 1), X_new[:, 0, :-len(selected_static)]]))[:, 0]
+                    y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
                     y_new_pred = np.clip(y_new_pred, 0, None)
                     
                     dates = new_df[date_col] if date_col else pd.RangeIndex(len(new_df))
