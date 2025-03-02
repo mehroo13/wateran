@@ -6,7 +6,7 @@ import os
 import tempfile
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 from io import BytesIO
 from tensorflow.keras.utils import plot_model
 
@@ -21,9 +21,49 @@ NUM_LAGGED_FEATURES = 3
 MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weights.h5")
 MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "gru_model_plot.png")
 
-# -------------------- NSE Function --------------------
+# -------------------- Metric Functions --------------------
 def nse(actual, predicted):
+    """Nash-Sutcliffe Efficiency"""
     return 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - np.mean(actual)) ** 2))
+
+def kge(actual, predicted):
+    """Kling-Gupta Efficiency"""
+    r = np.corrcoef(actual, predicted)[0, 1]
+    alpha = np.std(predicted) / np.std(actual)
+    beta = np.mean(predicted) / np.mean(actual)
+    return 1 - np.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
+
+def pbias(actual, predicted):
+    """Percent Bias"""
+    return 100 * (np.sum(predicted - actual) / np.sum(actual))
+
+def peak_flow_error(actual, predicted):
+    """Peak Flow Error"""
+    actual_peak = np.max(actual)
+    predicted_peak = np.max(predicted)
+    return (predicted_peak - actual_peak) / actual_peak * 100 if actual_peak != 0 else 0
+
+def high_flow_bias(actual, predicted, percentile=90):
+    """High Flow Bias (based on top percentile flows)"""
+    threshold = np.percentile(actual, percentile)
+    high_actual = actual[actual >= threshold]
+    high_predicted = predicted[actual >= threshold]
+    if len(high_actual) > 0:
+        return 100 * (np.mean(high_predicted) - np.mean(high_actual)) / np.mean(high_actual)
+    return 0
+
+def low_flow_bias(actual, predicted, percentile=10):
+    """Low Flow Bias (based on bottom percentile flows)"""
+    threshold = np.percentile(actual, percentile)
+    low_actual = actual[actual <= threshold]
+    low_predicted = predicted[actual <= threshold]
+    if len(low_actual) > 0:
+        return 100 * (np.mean(low_predicted) - np.mean(low_actual)) / np.mean(low_actual)
+    return 0
+
+def volume_error(actual, predicted):
+    """Volume Error"""
+    return 100 * (np.sum(predicted) - np.sum(actual)) / np.sum(actual)
 
 # -------------------- Custom Callback for Epoch Tracking --------------------
 class StreamlitProgressCallback(tf.keras.callbacks.Callback):
@@ -98,6 +138,8 @@ if 'selected_inputs' not in st.session_state:
     st.session_state.selected_inputs = None
 if 'new_date_col' not in st.session_state:
     st.session_state.new_date_col = None
+if 'selected_metrics' not in st.session_state:
+    st.session_state.selected_metrics = None
 
 # Layout with columns
 col1, col2 = st.columns([2, 1])
@@ -222,15 +264,48 @@ if uploaded_file:
                 y_test_actual = scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :]]))[:, 0]
                 y_train_pred = np.clip(y_train_pred, 0, None)
                 y_test_pred = np.clip(y_test_pred, 0, None)
+
+                # Calculate all metrics
                 metrics = {
-                    "Training RMSE": np.sqrt(mean_squared_error(y_train_actual, y_train_pred)),
-                    "Testing RMSE": np.sqrt(mean_squared_error(y_test_actual, y_test_pred)),
-                    "Training R²": r2_score(y_train_actual, y_train_pred),
-                    "Testing R²": r2_score(y_test_actual, y_test_pred),
-                    "Training NSE": nse(y_train_actual, y_train_pred),
-                    "Testing NSE": nse(y_test_actual, y_test_pred)
+                    "RMSE": {
+                        "Training": np.sqrt(mean_squared_error(y_train_actual, y_train_pred)),
+                        "Testing": np.sqrt(mean_squared_error(y_test_actual, y_test_pred))
+                    },
+                    "MAE": {
+                        "Training": mean_absolute_error(y_train_actual, y_train_pred),
+                        "Testing": mean_absolute_error(y_test_actual, y_test_pred)
+                    },
+                    "NSE": {
+                        "Training": nse(y_train_actual, y_train_pred),
+                        "Testing": nse(y_test_actual, y_test_pred)
+                    },
+                    "KGE": {
+                        "Training": kge(y_train_actual, y_train_pred),
+                        "Testing": kge(y_test_actual, y_test_pred)
+                    },
+                    "PBIAS": {
+                        "Training": pbias(y_train_actual, y_train_pred),
+                        "Testing": pbias(y_test_actual, y_test_pred)
+                    },
+                    "Peak Flow Error": {
+                        "Training": peak_flow_error(y_train_actual, y_train_pred),
+                        "Testing": peak_flow_error(y_test_actual, y_test_pred)
+                    },
+                    "High Flow Bias": {
+                        "Training": high_flow_bias(y_train_actual, y_train_pred),
+                        "Testing": high_flow_bias(y_test_actual, y_test_pred)
+                    },
+                    "Low Flow Bias": {
+                        "Training": low_flow_bias(y_train_actual, y_train_pred),
+                        "Testing": low_flow_bias(y_test_actual, y_test_pred)
+                    },
+                    "Volume Error": {
+                        "Training": volume_error(y_train_actual, y_train_pred),
+                        "Testing": volume_error(y_test_actual, y_test_pred)
+                    }
                 }
                 st.session_state.metrics = metrics
+
                 dates = df[date_col] if date_col != "None" else pd.RangeIndex(len(df))
                 train_dates, test_dates = dates[:train_size], dates[train_size:]
                 st.session_state.train_results_df = pd.DataFrame({
@@ -271,18 +346,29 @@ if st.session_state.metrics or st.session_state.fig or st.session_state.train_re
     with st.expander("📊 Training and Testing Results", expanded=True):
         if st.session_state.metrics:
             st.subheader("📏 Model Performance Metrics")
-            metrics_df = pd.DataFrame({
-                "Metric": ["RMSE", "R²", "NSE"],
-                "Training": [f"{st.session_state.metrics['Training RMSE']:.4f}", 
-                             f"{st.session_state.metrics['Training R²']:.4f}", 
-                             f"{st.session_state.metrics['Training NSE']:.4f}"],
-                "Testing": [f"{st.session_state.metrics['Testing RMSE']:.4f}", 
-                            f"{st.session_state.metrics['Testing R²']:.4f}", 
-                            f"{st.session_state.metrics['Testing NSE']:.4f}"]
-            })
-            st.table(metrics_df.style.set_properties(**{'text-align': 'center'}).set_table_styles([
-                {'selector': 'th', 'props': [('font-weight', 'bold'), ('text-align', 'center')]}
-            ]))
+            all_metrics = list(st.session_state.metrics.keys())
+            if st.session_state.selected_metrics is None:
+                st.session_state.selected_metrics = all_metrics
+            selected_metrics = st.multiselect(
+                "Select Metrics to Display:",
+                all_metrics,
+                default=st.session_state.selected_metrics,
+                key="metrics_select"
+            )
+            st.session_state.selected_metrics = selected_metrics
+
+            if selected_metrics:
+                metrics_df = pd.DataFrame({
+                    "Metric": selected_metrics,
+                    "Training": [f"{st.session_state.metrics[m]['Training']:.4f}" for m in selected_metrics],
+                    "Testing": [f"{st.session_state.metrics[m]['Testing']:.4f}" for m in selected_metrics]
+                })
+                st.table(metrics_df.style.set_properties(**{'text-align': 'center'}).set_table_styles([
+                    {'selector': 'th', 'props': [('font-weight', 'bold'), ('text-align', 'center')]}
+                ]))
+            else:
+                st.warning("Please select at least one metric to display.")
+
         col_plot, col_dl = st.columns([3, 1])
         with col_plot:
             if st.session_state.fig:
@@ -306,7 +392,6 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
         st.subheader("Upload New Data for Prediction")
         new_data_file = st.file_uploader("Choose an Excel file with new input data", type=["xlsx"], key="new_data")
         
-        # Update session state with new data file only if it changes
         if new_data_file and new_data_file != st.session_state.new_data_file:
             st.session_state.new_data_file = new_data_file
             st.session_state.new_predictions_df = None
@@ -318,11 +403,10 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             new_df = pd.read_excel(st.session_state.new_data_file)
             st.write("**New Data Preview:**", new_df.head())
             
-            # Date column handling for new data
             datetime_cols = [col for col in new_df.columns if pd.api.types.is_datetime64_any_dtype(new_df[col]) or "date" in col.lower()]
             if datetime_cols:
                 if st.session_state.new_date_col is None:
-                    st.session_state.new_date_col = datetime_cols[0]  # Default to first datetime column
+                    st.session_state.new_date_col = datetime_cols[0]
                 date_col = st.selectbox(
                     "Select datetime column for new data:",
                     datetime_cols,
@@ -336,16 +420,13 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 st.warning("No datetime column found in new data. Predictions will not include dates.")
                 date_col = None
             
-            # Get input variables from training
             input_vars = st.session_state.input_vars
             output_var = st.session_state.output_var
             
-            # Identify available input columns in new data
             available_new_inputs = [col for col in new_df.columns if col in input_vars and (date_col is None or col != date_col)]
             if not available_new_inputs:
                 st.error("No recognized input variables found in the new data. Please include at least one of: " + ", ".join(input_vars))
             else:
-                # Use cached selected inputs if available, otherwise set default
                 if st.session_state.selected_inputs is None:
                     st.session_state.selected_inputs = available_new_inputs
                 
@@ -360,7 +441,6 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 if not selected_inputs:
                     st.error("Please select at least one input variable for prediction.")
                 elif st.button("🔍 Predict"):
-                    # Generate lagged features only for selected inputs
                     feature_cols = []
                     for var in selected_inputs:
                         for lag in range(1, NUM_LAGGED_FEATURES + 1):
@@ -368,24 +448,20 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                             feature_cols.append(f'{var}_Lag_{lag}')
                     new_df.dropna(inplace=True)
                     
-                    # Prepare all features used in training
                     all_feature_cols = input_vars + st.session_state.feature_cols
                     new_all_feature_cols = selected_inputs + feature_cols
                     
-                    # Create a DataFrame with all expected columns, filling missing ones with zeros
                     full_new_df = pd.DataFrame(index=new_df.index, columns=[output_var] + all_feature_cols)
-                    full_new_df[output_var] = 0  # Dummy value for output, not used in prediction
+                    full_new_df[output_var] = 0
                     for col in new_all_feature_cols:
                         full_new_df[col] = new_df[col]
-                    full_new_df.fillna(0, inplace=True)  # Fill missing inputs/lags with 0
+                    full_new_df.fillna(0, inplace=True)
                     
-                    # Scale the data
                     scaler = st.session_state.scaler
                     new_scaled = scaler.transform(full_new_df[[output_var] + all_feature_cols])
-                    X_new = new_scaled[:, 1:]  # Exclude the dummy output column
+                    X_new = new_scaled[:, 1:]
                     X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
                     
-                    # Predict
                     model = build_gru_model(
                         (X_new.shape[1], X_new.shape[2]),
                         st.session_state.gru_layers,
@@ -399,14 +475,12 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
                     y_new_pred = np.clip(y_new_pred, 0, None)
                     
-                    # Store predictions with dates if available
                     dates = new_df[date_col] if date_col else pd.RangeIndex(len(new_df))
                     st.session_state.new_predictions_df = pd.DataFrame({
-                        "Date": dates.values[-len(y_new_pred):],  # Match length after dropping NaNs
+                        "Date": dates.values[-len(y_new_pred):],
                         f"Predicted_{output_var}": y_new_pred
                     })
                     
-                    # Plot with dates
                     fig, ax = plt.subplots(figsize=(12, 4))
                     if date_col:
                         ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
@@ -422,7 +496,6 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     plt.tight_layout()
                     st.session_state.new_fig = fig
                 
-                # Display cached results if they exist
                 if st.session_state.new_predictions_df is not None:
                     st.subheader("New Data Predictions")
                     st.write(st.session_state.new_predictions_df)
