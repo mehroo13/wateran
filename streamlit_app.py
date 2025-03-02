@@ -344,7 +344,7 @@ if uploaded_file:
 # Results Section
 if st.session_state.metrics or st.session_state.fig or st.session_state.train_results_df or st.session_state.test_results_df:
     with st.expander("📊 Training and Testing Results", expanded=True):
-        if st.session_state.metrics:
+        if st.session_state.metrics is not None:  # Check if metrics are available
             st.subheader("📏 Model Performance Metrics")
             all_metrics = list(st.session_state.metrics.keys())
             if st.session_state.selected_metrics is None:
@@ -368,6 +368,8 @@ if st.session_state.metrics or st.session_state.fig or st.session_state.train_re
                 ]))
             else:
                 st.warning("Please select at least one metric to display.")
+        else:
+            st.info("No metrics available yet. Please test the model first.")
 
         col_plot, col_dl = st.columns([3, 1])
         with col_plot:
