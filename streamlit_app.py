@@ -4,7 +4,6 @@ import numpy as np
 import tensorflow as tf
 import os
 import tempfile
-import matplotlib.pyplot as plt
 import plotly.express as px
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, r2_score
@@ -54,8 +53,16 @@ if uploaded_file:
 
     # 🔢 **Numeric Columns Selection**
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+
+    if not numeric_cols:
+        st.error("No numeric columns found in the dataset. Please upload a valid dataset with numeric data.")
+        st.stop()
+
     output_var = st.selectbox("🎯 Output Variable to Predict:", numeric_cols)
-    input_vars = st.multiselect("📊 Input Variables:", [col for col in numeric_cols if col != output_var], default=[numeric_cols[0]])
+
+    # Ensure at least one numeric column is available for input
+    default_input_vars = [numeric_cols[0]] if len(numeric_cols) > 1 else []
+    input_vars = st.multiselect("📊 Input Variables:", [col for col in numeric_cols if col != output_var], default=default_input_vars)
 
     # **Training & Testing Split Preview**
     train_size = int(len(df) * train_split)
