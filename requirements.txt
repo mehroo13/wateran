@@ -4,5 +4,4 @@ numpy
 tensorflow
 matplotlib
 scikit-learn
-pydot
 graphviz
