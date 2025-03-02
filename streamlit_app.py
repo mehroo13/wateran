@@ -55,7 +55,7 @@ def build_gru_model(input_shape, gru_layers, dense_layers, gru_units, dense_unit
     return model
 
 # -------------------- Streamlit UI --------------------
-st.set_page_config(page_title="Time Series Prediction", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Wateran", page_icon="📈", layout="wide")
 st.title("🌊 Time Series Prediction with GRU")
 st.markdown("**Design, train, and predict time series data effortlessly with GRU!**")
 
@@ -139,7 +139,8 @@ if uploaded_file:
                 st.info("Using index for ordering (assuming sequential data).")
         else:
             st.info("No datetime column found. Using index for ordering.")
-        numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and (datetime_cols and col != date_col or True)]
+            date_col = None
+        numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and (date_col is None or col != date_col)]
         if len(numeric_cols) < 2:
             st.error("Dataset needs at least two numeric columns.")
             st.stop()
@@ -166,6 +167,7 @@ if uploaded_file:
         st.session_state.dense_units = dense_units
         st.session_state.learning_rate = learning_rate
         st.session_state.feature_cols = feature_cols
+        st.session_state.date_col = date_col
 
     with col2:
         st.write(f"**Training Size:** {int(len(df) * train_split)} rows | **Testing Size:** {len(df) - int(len(df) * train_split)} rows")
@@ -229,25 +231,35 @@ if uploaded_file:
                     "Testing NSE": nse(y_test_actual, y_test_pred)
                 }
                 st.session_state.metrics = metrics
+                dates = df[date_col] if date_col != "None" else pd.RangeIndex(len(df))
+                train_dates, test_dates = dates[:train_size], dates[train_size:]
                 st.session_state.train_results_df = pd.DataFrame({
+                    "Date": train_dates[:len(y_train_actual)],
                     f"Actual_{output_var}": y_train_actual,
                     f"Predicted_{output_var}": y_train_pred
                 })
                 st.session_state.test_results_df = pd.DataFrame({
+                    "Date": test_dates[:len(y_test_actual)],
                     f"Actual_{output_var}": y_test_actual,
                     f"Predicted_{output_var}": y_test_pred
                 })
                 fig, ax = plt.subplots(2, 1, figsize=(12, 8))
-                ax[0].plot(y_train_actual, label="Actual", color="#1f77b4", linewidth=2)
-                ax[0].plot(y_train_pred, label="Predicted", color="#ff7f0e", linestyle="--", linewidth=2)
+                ax[0].plot(train_dates[:len(y_train_actual)], y_train_actual, label="Actual", color="#1f77b4", linewidth=2)
+                ax[0].plot(train_dates[:len(y_train_pred)], y_train_pred, label="Predicted", color="#ff7f0e", linestyle="--", linewidth=2)
                 ax[0].set_title(f"Training Data: {output_var}", fontsize=14, pad=10)
                 ax[0].legend()
                 ax[0].grid(True, linestyle='--', alpha=0.7)
-                ax[1].plot(y_test_actual, label="Actual", color="#1f77b4", linewidth=2)
-                ax[1].plot(y_test_pred, label="Predicted", color="#ff7f0e", linestyle="--", linewidth=2)
+                if date_col != "None":
+                    ax[0].set_xlabel("Date")
+                    plt.setp(ax[0].xaxis.get_majorticklabels(), rotation=45)
+                ax[1].plot(test_dates[:len(y_test_actual)], y_test_actual, label="Actual", color="#1f77b4", linewidth=2)
+                ax[1].plot(test_dates[:len(y_test_pred)], y_test_pred, label="Predicted", color="#ff7f0e", linestyle="--", linewidth=2)
                 ax[1].set_title(f"Testing Data: {output_var}", fontsize=14, pad=10)
                 ax[1].legend()
                 ax[1].grid(True, linestyle='--', alpha=0.7)
+                if date_col != "None":
+                    ax[1].set_xlabel("Date")
+                    plt.setp(ax[1].xaxis.get_majorticklabels(), rotation=45)
                 plt.tight_layout()
                 st.session_state.fig = fig
                 st.success("Model tested successfully!")
@@ -310,19 +322,18 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             datetime_cols = [col for col in new_df.columns if pd.api.types.is_datetime64_any_dtype(new_df[col]) or "date" in col.lower()]
             if datetime_cols:
                 if st.session_state.new_date_col is None:
-                    st.session_state.new_date_col = "None"
+                    st.session_state.new_date_col = datetime_cols[0]  # Default to first datetime column
                 date_col = st.selectbox(
-                    "Select datetime column for new data (optional):",
-                    ["None"] + datetime_cols,
-                    index=["None"] + datetime_cols.index(st.session_state.new_date_col) if st.session_state.new_date_col in datetime_cols else 0,
+                    "Select datetime column for new data:",
+                    datetime_cols,
+                    index=datetime_cols.index(st.session_state.new_date_col) if st.session_state.new_date_col in datetime_cols else 0,
                     key="date_col_new"
                 )
                 st.session_state.new_date_col = date_col
-                if date_col != "None":
-                    new_df[date_col] = pd.to_datetime(new_df[date_col])
-                    new_df = new_df.sort_values(date_col)
+                new_df[date_col] = pd.to_datetime(new_df[date_col])
+                new_df = new_df.sort_values(date_col)
             else:
-                st.info("No datetime column found in new data. Using index for ordering.")
+                st.warning("No datetime column found in new data. Predictions will not include dates.")
                 date_col = None
             
             # Get input variables from training
@@ -336,7 +347,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             else:
                 # Use cached selected inputs if available, otherwise set default
                 if st.session_state.selected_inputs is None:
-                    st.session_state.selected_inputs = available_new_inputs[:1]
+                    st.session_state.selected_inputs = available_new_inputs
                 
                 selected_inputs = st.multiselect(
                     "🔧 Select Input Variables for Prediction:",
@@ -389,25 +400,21 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     y_new_pred = np.clip(y_new_pred, 0, None)
                     
                     # Store predictions with dates if available
-                    if date_col != "None" and date_col in new_df.columns:
-                        dates = new_df[date_col].iloc[-len(y_new_pred):]  # Match length after dropping NaNs
-                        st.session_state.new_predictions_df = pd.DataFrame({
-                            "Date": dates,
-                            f"Predicted_{output_var}": y_new_pred
-                        })
-                    else:
-                        st.session_state.new_predictions_df = pd.DataFrame({
-                            f"Predicted_{output_var}": y_new_pred
-                        })
+                    dates = new_df[date_col] if date_col else pd.RangeIndex(len(new_df))
+                    st.session_state.new_predictions_df = pd.DataFrame({
+                        "Date": dates.values[-len(y_new_pred):],  # Match length after dropping NaNs
+                        f"Predicted_{output_var}": y_new_pred
+                    })
                     
-                    # Plot with dates if available
+                    # Plot with dates
                     fig, ax = plt.subplots(figsize=(12, 4))
-                    if date_col != "None" and date_col in new_df.columns:
-                        ax.plot(dates, y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
+                    if date_col:
+                        ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
                         ax.set_xlabel("Date")
                         plt.xticks(rotation=45)
                     else:
                         ax.plot(y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
+                        ax.set_xlabel("Index")
                     ax.set_title(f"Predictions for New Data: {output_var}", fontsize=14, pad=10)
                     ax.set_ylabel(output_var)
                     ax.legend()
