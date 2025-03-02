@@ -339,7 +339,7 @@ with col2:
                         f"Predicted_{st.session_state.output_var}": y_test_pred
                     })
                     fig, ax = plt.subplots(2, 1, figsize=(12, 8))
-                    ax[0].plot(train_dates[:len(y_train_actual)], y_train_actual, label( label="Actual", color="#1f77b4", linewidth=2)
+                    ax[0].plot(train_dates[:len(y_train_actual)], y_train_actual, label="Actual", color="#1f77b4", linewidth=2)
                     ax[0].plot(train_dates[:len(y_train_pred)], y_train_pred, label="Predicted", color="#ff7f0e", linestyle="--", linewidth=2)
                     ax[0].set_title(f"Training: {st.session_state.output_var}", fontsize=14)
                     ax[0].legend()
