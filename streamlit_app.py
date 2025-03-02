@@ -90,6 +90,8 @@ if 'dense_units' not in st.session_state:
     st.session_state.dense_units = None
 if 'learning_rate' not in st.session_state:
     st.session_state.learning_rate = None
+if 'feature_cols' not in st.session_state:
+    st.session_state.feature_cols = None
 
 # Layout with columns
 col1, col2 = st.columns([2, 1])
@@ -157,6 +159,7 @@ if uploaded_file:
         st.session_state.gru_units = gru_units
         st.session_state.dense_units = dense_units
         st.session_state.learning_rate = learning_rate
+        st.session_state.feature_cols = feature_cols
 
     with col2:
         st.write(f"**Training Size:** {int(len(df) * train_split)} rows | **Testing Size:** {len(df) - int(len(df) * train_split)} rows")
@@ -283,30 +286,46 @@ if st.session_state.metrics or st.session_state.fig or st.session_state.train_re
 if os.path.exists(MODEL_WEIGHTS_PATH):
     with st.expander("🔮 Predict New Data", expanded=False):
         st.subheader("Upload New Data for Prediction")
-        new_data_file = st.file_uploader("Choose an Excel file with new data", type=["xlsx"], key="new_data")
+        new_data_file = st.file_uploader("Choose an Excel file with new input data", type=["xlsx"], key="new_data")
         if new_data_file and st.button("🔍 Predict"):
             new_df = pd.read_excel(new_data_file)
             st.write("**New Data Preview:**", new_df.head())
             
-            # Automatically generate lagged features for new data
+            # Get input variables from training
             input_vars = st.session_state.input_vars
             output_var = st.session_state.output_var
-            required_raw_cols = input_vars + [output_var]
-            missing_raw_cols = [col for col in required_raw_cols if col not in new_df.columns]
-            if missing_raw_cols:
-                st.error(f"New data is missing required columns: {', '.join(missing_raw_cols)}. Ensure all input and output variables are included.")
+            
+            # Check available input columns in new data
+            new_input_cols = [col for col in new_df.columns if col in input_vars]
+            if not new_input_cols:
+                st.error("No recognized input variables found in the new data. Please include at least one of: " + ", ".join(input_vars))
             else:
+                # Generate lagged features only for available inputs
                 feature_cols = []
-                for var in input_vars + [output_var]:
+                for var in new_input_cols:
                     for lag in range(1, NUM_LAGGED_FEATURES + 1):
                         new_df[f'{var}_Lag_{lag}'] = new_df[var].shift(lag)
                         feature_cols.append(f'{var}_Lag_{lag}')
                 new_df.dropna(inplace=True)
-                all_feature_cols = input_vars + feature_cols
+                
+                # Prepare all features used in training
+                all_feature_cols = input_vars + st.session_state.feature_cols
+                new_all_feature_cols = new_input_cols + feature_cols
+                
+                # Create a DataFrame with all expected columns, filling missing ones with zeros
+                full_new_df = pd.DataFrame(index=new_df.index, columns=[output_var] + all_feature_cols)
+                full_new_df[output_var] = 0  # Dummy value for output, not used in prediction
+                for col in new_all_feature_cols:
+                    full_new_df[col] = new_df[col]
+                full_new_df.fillna(0, inplace=True)  # Fill missing inputs/lags with 0
+                
+                # Scale the data
                 scaler = st.session_state.scaler
-                new_scaled = scaler.transform(new_df[[output_var] + all_feature_cols])
-                X_new = new_scaled[:, 1:]
+                new_scaled = scaler.transform(full_new_df[[output_var] + all_feature_cols])
+                X_new = new_scaled[:, 1:]  # Exclude the dummy output column
                 X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
+                
+                # Predict
                 model = build_gru_model(
                     (X_new.shape[1], X_new.shape[2]),
                     st.session_state.gru_layers,
@@ -319,6 +338,8 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 y_new_pred = model.predict(X_new)
                 y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
                 y_new_pred = np.clip(y_new_pred, 0, None)
+                
+                # Store and display results
                 st.session_state.new_predictions_df = pd.DataFrame({
                     f"Predicted_{output_var}": y_new_pred
                 })
