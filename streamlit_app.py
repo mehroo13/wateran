@@ -56,7 +56,7 @@ def build_gru_model(input_shape, gru_layers, dense_layers, gru_units, dense_unit
 
 # -------------------- Streamlit UI --------------------
 st.set_page_config(page_title="Wateran", page_icon="📈", layout="wide")
-st.title("🌊 Time Series Prediction with GRU")
+st.title("🌊 Wateran")
 st.markdown("**Design, train, and predict time series data effortlessly with GRU!**")
 
 # Initialize session state
