@@ -56,7 +56,7 @@ def low_flow_bias(actual, predicted, percentile=10):
     return 0
 
 def volume_error(actual, predicted):
-    return 100 * (np.sum(predicted) - np.sum(actual)) / np.sum(actual))
+    return 100 * (np.sum(predicted) - np.sum(actual)) / np.sum(actual)
 
 # -------------------- Custom Callback for Epoch Tracking --------------------
 class StreamlitProgressCallback(tf.keras.callbacks.Callback):
