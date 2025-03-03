@@ -22,7 +22,7 @@ MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weig
 MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "gru_model_plot.png")
 
 # -------------------- Metric Functions --------------------
-def nse(actual, predicted):
+def n "()":actual, predicted
     return 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - np.mean(actual)) ** 2))
 
 def kge(actual, predicted):
@@ -87,12 +87,61 @@ def build_gru_model(input_shape, gru_layers, dense_layers, gru_units, dense_unit
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss='mse')
     return model
 
-# -------------------- Streamlit UI --------------------
+# -------------------- Styling and Streamlit UI --------------------
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
-st.title("🌊 Wateran")
-st.markdown("**Predict time series data with GRU - Simple, Fast, Accurate!**")
 
-# Initialize session state with defaults
+# Custom CSS for enhanced UI
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f0f4f8;
+        padding: 20px;
+        border-radius: 10px;
+    }
+    .stButton>button {
+        background-color: #007bff;
+        color: white;
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-weight: bold;
+    }
+    .stButton>button:hover {
+        background-color: #0056b3;
+    }
+    .stSlider .st-ba {
+        background-color: #007bff;
+    }
+    .stSelectbox, .stMultiselect, .stNumberInput {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 10px;
+        border: 1px solid #ced4da;
+    }
+    .stExpander {
+        background-color: #ffffff;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        padding: 10px;
+    }
+    h1, h2, h3 {
+        color: #2c3e50;
+        font-family: 'Arial', sans-serif;
+    }
+    .metric-box {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 15px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        text-align: center;
+        margin: 10px 0;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("🌊 Wateran: Time Series Prediction with GRU")
+st.markdown("**Simple, Fast, and Accurate Predictions Powered by GRU Neural Networks**", unsafe_allow_html=True)
+
+# Initialize session state
 if 'metrics' not in st.session_state:
     st.session_state.metrics = None
 if 'train_results_df' not in st.session_state:
@@ -144,23 +193,35 @@ if 'date_col' not in st.session_state:
 if 'df' not in st.session_state:
     st.session_state.df = None
 
-# Main layout with two columns
-col1, col2 = st.columns([2, 1])
+# Sidebar for Quick Navigation
+with st.sidebar:
+    st.header("Navigation")
+    st.markdown("Use the sections below to explore Wateran:")
+    st.button("📥 Data Input", key="nav_data")
+    st.button("⚙️ Model Configuration", key="nav_config")
+    st.button("📊 Results", key="nav_results")
+    st.button("🔮 New Predictions", key="nav_predict")
+    st.markdown("---")
+    st.info("Upload your data, configure the model, and visualize results all in one place!")
+
+# Main Layout with Two Columns
+col1, col2 = st.columns([2, 1], gap="large")
 
 # Left Column: Data and Variable Selection
 with col1:
-    st.subheader("📥 Data Input")
-    uploaded_file = st.file_uploader("Upload Training Data (Excel)", type=["xlsx"], key="train_data")
+    st.subheader("📥 Data Input", divider="blue")
+    uploaded_file = st.file_uploader("Upload Training Data (Excel)", type=["xlsx"], key="train_data", help="Upload an Excel file with your time series data.")
     
     if uploaded_file:
         df = pd.read_excel(uploaded_file)
-        st.write("**Dataset Preview:**", df.head(5))
+        st.markdown("**Dataset Preview:**")
+        st.dataframe(df.head(5), use_container_width=True)
         
         # Date column selection
         datetime_cols = [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col]) or "date" in col.lower()]
         date_col = None
         if datetime_cols:
-            date_col = st.selectbox("Select Date Column (optional)", ["None"] + datetime_cols, index=0, key="date_col_train")
+            date_col = st.selectbox("Select Date Column (optional)", ["None"] + datetime_cols, index=0, key="date_col_train", help="Choose a column with dates, or use index.")
             if date_col != "None":
                 df[date_col] = pd.to_datetime(df[date_col])
                 df = df.sort_values(date_col)
@@ -176,21 +237,23 @@ with col1:
             st.stop()
         
         # Variable selection
-        output_var = st.selectbox("🎯 Output Variable", numeric_cols, key="output_var_train")
+        st.markdown("**Variable Selection**")
+        output_var = st.selectbox("🎯 Output Variable", numeric_cols, key="output_var_train", help="The variable you want to predict.")
         available_input_cols = [col for col in numeric_cols if col != output_var]
         if not available_input_cols:
             st.error("No input variables available.")
             st.stop()
-        input_vars = st.multiselect("🔧 Input Variables", available_input_cols, default=[available_input_cols[0]], key="input_vars_train")
+        input_vars = st.multiselect("🔧 Input Variables", available_input_cols, default=[available_input_cols[0]], key="input_vars_train", help="Select variables to use as inputs.")
         if not input_vars:
             st.error("Select at least one input variable.")
             st.stop()
 
-        # Variable type classification (Static or Dynamic)
+        # Variable type classification
         with st.expander("Variable Types", expanded=True):
+            st.markdown("**Classify Variable Types**")
             var_types = {}
             for var in input_vars:
-                var_type = st.selectbox(f"{var} Type", ["Dynamic", "Static"], key=f"{var}_type")
+                var_type = st.selectbox(f"{var} Type", ["Dynamic", "Static"], key=f"{var}_type", help="Dynamic: Time-dependent with lags; Static: Constant over time.")
                 var_types[var] = var_type
 
         # Store initial selections in session state
@@ -202,28 +265,30 @@ with col1:
 
 # Right Column: Model Settings and Actions
 with col2:
-    st.subheader("⚙️ Model Configuration")
+    st.subheader("⚙️ Model Configuration", divider="blue")
     
     # Training Parameters
-    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10)
-    batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8)
-    train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
-    num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags")
+    st.markdown("**Training Parameters**")
+    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, help="Number of training iterations.")
+    batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8, help="Number of samples per gradient update.")
+    train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT, help="Percentage of data used for training.") / 100
+    num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags", help="Number of past time steps to consider.")
     
     # Model Architecture
     with st.expander("Model Architecture", expanded=False):
-        gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=1, step=1)
-        gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}") for i in range(gru_layers)]
-        dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=1, step=1)
-        dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(dense_layers)]
-        learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f")
+        st.markdown("**Customize GRU Architecture**")
+        gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=1, step=1, help="Number of GRU layers.")
+        gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}", help="Units in GRU layer.") for i in range(gru_layers)]
+        dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=1, step=1, help="Number of dense layers.")
+        dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}", help="Units in dense layer.") for i in range(dense_layers)]
+        learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f", help="Step size for optimization.")
     
     # Metrics Selection
     st.markdown("**Evaluation Metrics**")
     all_metrics = ["RMSE", "MAE", "R²", "NSE", "KGE", "PBIAS", "Peak Flow Error", "High Flow Bias", "Low Flow Bias", "Volume Error"]
     if st.session_state.selected_metrics is None:
         st.session_state.selected_metrics = all_metrics
-    selected_metrics = st.multiselect("Select Metrics", all_metrics, default=st.session_state.selected_metrics, key="metrics_select")
+    selected_metrics = st.multiselect("Select Metrics", all_metrics, default=st.session_state.selected_metrics, key="metrics_select", help="Metrics to evaluate model performance.")
     st.session_state.selected_metrics = selected_metrics
     if not selected_metrics:
         st.error("Please select at least one metric.")
@@ -429,23 +494,24 @@ with col2:
 # Results Section
 if st.session_state.metrics or st.session_state.fig or st.session_state.train_results_df or st.session_state.test_results_df:
     with st.expander("📊 Results", expanded=True):
+        st.subheader("Results Overview", divider="blue")
         if st.session_state.metrics is not None:
-            st.subheader("📏 Performance Metrics")
+            st.markdown("**📏 Performance Metrics**")
             metrics_df = pd.DataFrame({
                 "Metric": st.session_state.selected_metrics,
                 "Training": [f"{st.session_state.metrics[m]['Training']:.4f}" for m in st.session_state.selected_metrics],
                 "Testing": [f"{st.session_state.metrics[m]['Testing']:.4f}" for m in st.session_state.selected_metrics]
             })
-            st.table(metrics_df.style.set_properties(**{'text-align': 'center'}).set_table_styles([
-                {'selector': 'th', 'props': [('font-weight', 'bold'), ('text-align', 'center')]}
-            ]))
+            st.dataframe(metrics_df.style.set_properties(**{'text-align': 'center'}).set_table_styles([
+                {'selector': 'th', 'props': [('font-weight', 'bold'), ('text-align', 'center'), ('background-color', '#007bff'), ('color', 'white')]}
+            ]), use_container_width=True)
         else:
             st.info("No results yet. Train and test the model to see metrics and plots.")
 
         col_plot, col_dl = st.columns([3, 1])
         with col_plot:
             if st.session_state.fig:
-                st.subheader("📈 Prediction Plots")
+                st.markdown("**📈 Prediction Plots**")
                 st.pyplot(st.session_state.fig)
         with col_dl:
             if st.session_state.fig:
@@ -462,8 +528,8 @@ if st.session_state.metrics or st.session_state.fig or st.session_state.train_re
 # New Data Prediction Section
 if os.path.exists(MODEL_WEIGHTS_PATH):
     with st.expander("🔮 New Predictions", expanded=False):
-        st.subheader("Predict New Data")
-        new_data_file = st.file_uploader("Upload New Data (Excel)", type=["xlsx"], key="new_data")
+        st.subheader("Predict New Data", divider="blue")
+        new_data_file = st.file_uploader("Upload New Data (Excel)", type=["xlsx"], key="new_data", help="Upload an Excel file with new data to predict.")
         
         if new_data_file and new_data_file != st.session_state.new_data_file:
             st.session_state.new_data_file = new_data_file
@@ -475,13 +541,14 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
 
         if st.session_state.new_data_file:
             new_df = pd.read_excel(st.session_state.new_data_file)
-            st.write("**New Data Preview:**", new_df.head())
+            st.markdown("**New Data Preview:**")
+            st.dataframe(new_df.head(), use_container_width=True)
             
             datetime_cols = [col for col in new_df.columns if pd.api.types.is_datetime64_any_dtype(new_df[col]) or "date" in col.lower()]
             if datetime_cols:
                 if st.session_state.new_date_col is None:
                     st.session_state.new_date_col = datetime_cols[0]
-                date_col = st.selectbox("Select Date Column", datetime_cols, index=datetime_cols.index(st.session_state.new_date_col) if st.session_state.new_date_col in datetime_cols else 0, key="date_col_new")
+                date_col = st.selectbox("Select Date Column", datetime_cols, index=datetime_cols.index(st.session_state.new_date_col) if st.session_state.new_date_col in datetime_cols else 0, key="date_col_new", help="Choose a date column for the new data.")
                 st.session_state.new_date_col = date_col
                 new_df[date_col] = pd.to_datetime(new_df[date_col])
                 new_df = new_df.sort_values(date_col)
@@ -501,15 +568,15 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 st.stop()
             if st.session_state.selected_inputs is None:
                 st.session_state.selected_inputs = available_new_inputs
-            selected_inputs = st.multiselect("🔧 Input Variables for Prediction", available_new_inputs, default=st.session_state.selected_inputs, key="new_input_vars")
+            selected_inputs = st.multiselect("🔧 Input Variables for Prediction", available_new_inputs, default=st.session_state.selected_inputs, key="new_input_vars", help="Select variables for prediction.")
             st.session_state.selected_inputs = selected_inputs
             
-            # Variable type classification for new data (without nested expander)
-            st.markdown("### New Data Variable Types")
+            # Variable type classification for new data
+            st.markdown("**New Data Variable Types**")
             if selected_inputs:
                 new_var_types = {}
                 for var in selected_inputs:
-                    var_type = st.selectbox(f"{var} Type (New Data)", ["Dynamic", "Static"], key=f"new_{var}_type")
+                    var_type = st.selectbox(f"{var} Type (New Data)", ["Dynamic", "Static"], key=f"new_{var}_type", help="Dynamic: Time-dependent; Static: Constant.")
                     new_var_types[var] = var_type
                 st.session_state.new_var_types = new_var_types
             else:
@@ -561,7 +628,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 for col in feature_cols_new:
                     if col in full_new_df.columns and col in new_df.columns:
                         full_new_df[col] = new_df[col]
-                full_new_df.fillna(0, inplace=True)  # Fill missing columns with 0
+                full_new_df.fillna(0, inplace=True)
                 
                 # Ensure numeric data
                 full_new_df = full_new_df[feature_cols + [output_var]].apply(pd.to_numeric, errors='coerce')
@@ -584,7 +651,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     st.stop()
                 
                 scaler = st.session_state.scaler
-                new_scaled = scaler.transform(full_new_df[expected_cols])  # Use exact column order from training
+                new_scaled = scaler.transform(full_new_df[expected_cols])
                 X_new = new_scaled[:, :-1]
                 X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
                 
@@ -616,8 +683,8 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 st.session_state.new_fig = fig
             
             if st.session_state.new_predictions_df is not None:
-                st.subheader("Prediction Results")
-                st.write(st.session_state.new_predictions_df)
+                st.markdown("**Prediction Results**")
+                st.dataframe(st.session_state.new_predictions_df, use_container_width=True)
                 col_new_plot, col_new_dl = st.columns([3, 1])
                 with col_new_plot:
                     if st.session_state.new_fig:
