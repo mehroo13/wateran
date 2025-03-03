@@ -631,7 +631,3 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         new_csv = st.session_state.new_predictions_df.to_csv(index=False)
                         st.download_button("⬇️ Download CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
                 st.success("Predictions generated successfully!")
-
-# Footer
-st.markdown("---")
-st.markdown("**Built with ❤️ by xAI | Powered by GRU and Streamlit**")
