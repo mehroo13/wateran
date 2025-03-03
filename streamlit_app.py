@@ -242,6 +242,12 @@ with col2:
                 df = st.session_state.df.copy()
                 st.write("Original DataFrame columns:", df.columns.tolist())
                 st.write("Original DataFrame sample:", df.head())
+                
+                # Check for NaN in original data
+                nan_summary = df[st.session_state.input_vars + [st.session_state.output_var]].isnull().sum()
+                st.write("NaN values in original data (selected columns):", nan_summary.to_dict())
+                if nan_summary.sum() > 0:
+                    st.warning("Missing values detected in original data. These will be handled during preprocessing.")
 
                 # Generate feature columns based on variable types and num_lags
                 feature_cols = []
@@ -251,6 +257,9 @@ with col2:
                             df[f'{var}_Lag_{lag}'] = df[var].shift(lag)
                             feature_cols.append(f'{var}_Lag_{lag}')
                     else:  # Static
+                        # Fill NaN in static variables with median
+                        if df[var].isnull().any():
+                            df[var] = df[var].fillna(df[var].median())
                         feature_cols.append(var)
                 for lag in range(1, num_lags + 1):
                     df[f'{st.session_state.output_var}_Lag_{lag}'] = df[st.session_state.output_var].shift(lag)
@@ -258,12 +267,14 @@ with col2:
                 
                 st.write("DataFrame after adding lags (before dropna):", df.head())
                 st.write("Rows before dropna:", len(df))
+                
+                # Drop rows where dynamic lagged features are NaN (initial rows only)
                 df.dropna(inplace=True)
                 st.write("DataFrame after dropna:", df.head())
                 st.write("Rows after dropna:", len(df))
                 
                 if df.empty:
-                    st.error("DataFrame is empty after removing NaN values. Check your data or reduce the number of lags.")
+                    st.error("DataFrame is empty after removing NaN values. Likely due to pervasive missing data in original columns.")
                     st.stop()
 
                 st.session_state.feature_cols = feature_cols
