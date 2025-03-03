@@ -387,7 +387,7 @@ with col2:
 
                     metrics = {metric: {
                         "Training": all_metrics_dict[metric](y_train_actual, y_train_pred),
-                        "Testing": all_metrics_dict[metric](y_test_actual, y_test_pred)  # Fixed typo here
+                        "Testing": all_metrics_dict[metric](y_test_actual, y_test_pred)
                     } for metric in selected_metrics}
                     st.session_state.metrics = metrics
 
@@ -502,10 +502,8 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 selected_inputs = st.multiselect("🔧 Input Variables for Prediction", available_new_inputs, default=st.session_state.selected_inputs, key="new_input_vars")
                 st.session_state.selected_inputs = selected_inputs
                 
-                if not selected_inputs:
-                    st.error("Select at least one input variable.")
-                else:
-                    # Variable type classification for new data (moved outside button)
+                if selected_inputs:
+                    # Variable type classification for new data
                     with st.expander("New Data Variable Types", expanded=True):
                         new_var_types = {}
                         for var in selected_inputs:
