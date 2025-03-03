@@ -489,17 +489,6 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 st.warning("No datetime column found. Predictions will use index.")
                 date_col = None
             
-            # Variable type classification for new data (moved here)
-            with st.expander("New Data Variable Types", expanded=True):
-                if st.session_state.selected_inputs:
-                    new_var_types = {}
-                    for var in st.session_state.selected_inputs:
-                        var_type = st.selectbox(f"{var} Type (New Data)", ["Dynamic", "Static"], key=f"new_{var}_type")
-                        new_var_types[var] = var_type
-                    st.session_state.new_var_types = new_var_types
-                else:
-                    st.info("Please select input variables to assign types.")
-
             input_vars = st.session_state.input_vars
             output_var = st.session_state.output_var
             num_lags = st.session_state.num_lags
@@ -514,6 +503,17 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 st.session_state.selected_inputs = available_new_inputs
             selected_inputs = st.multiselect("🔧 Input Variables for Prediction", available_new_inputs, default=st.session_state.selected_inputs, key="new_input_vars")
             st.session_state.selected_inputs = selected_inputs
+            
+            # Variable type classification for new data (without nested expander)
+            st.markdown("### New Data Variable Types")
+            if selected_inputs:
+                new_var_types = {}
+                for var in selected_inputs:
+                    var_type = st.selectbox(f"{var} Type (New Data)", ["Dynamic", "Static"], key=f"new_{var}_type")
+                    new_var_types[var] = var_type
+                st.session_state.new_var_types = new_var_types
+            else:
+                st.info("Please select input variables to assign types.")
             
             if st.button("🔍 Predict"):
                 if not selected_inputs:
@@ -599,7 +599,3 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         new_csv = st.session_state.new_predictions_df.to_csv(index=False)
                         st.download_button("⬇️ Download CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
                 st.success("Predictions generated successfully!")
-
-# Footer
-st.markdown("---")
-st.markdown("**Built with ❤️ by xAI | Powered by GRU and Streamlit**")
