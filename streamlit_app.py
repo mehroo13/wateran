@@ -235,8 +235,7 @@ with col2:
     epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, help="Number of training iterations (more = longer training).")
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8, help="Samples per gradient update.")
     train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT, help="Percentage for training vs. testing.") / 100
-    num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags", help="Past time steps to include.")
-    st.session_state.num_lags = num_lags
+    st.number_input("Number of Lags", min_value=1, max_value=10, value=DEFAULT_NUM_LAGS if st.session_state.num_lags is None else st.session_state.num_lags, step=1, key="num_lags", help="Past time steps to include.")
     
     # Model Architecture
     with st.expander("Model Architecture", expanded=False):
@@ -245,7 +244,11 @@ with col2:
         dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=1, step=1, help="Number of dense layers for output.")
         dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(dense_layers)]
         learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f", help="Optimization step size.")
-        st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate = gru_layers, dense_layers, gru_units, dense_units, learning_rate
+        st.session_state.gru_layers = gru_layers
+        st.session_state.dense_layers = dense_layers
+        st.session_state.gru_units = gru_units
+        st.session_state.dense_units = dense_units
+        st.session_state.learning_rate = learning_rate
     
     # Metrics Selection
     st.markdown("**Evaluation Metrics**")
@@ -265,6 +268,7 @@ with col2:
 
                 # Feature Engineering
                 feature_cols = []
+                num_lags = st.session_state["num_lags"]
                 for var in st.session_state.input_vars:
                     if st.session_state.var_types[var] == "Dynamic":
                         for lag in range(1, num_lags + 1):
@@ -316,6 +320,7 @@ with col2:
                     st.stop()
                 df = st.session_state.df.copy()
                 feature_cols = st.session_state.feature_cols
+                num_lags = st.session_state["num_lags"]
                 for var in st.session_state.input_vars:
                     if st.session_state.var_types[var] == "Dynamic":
                         for lag in range(1, num_lags + 1):
@@ -395,6 +400,7 @@ if st.session_state.feature_cols:
         if st.button("Run Cross-Validation"):
             df = st.session_state.df.copy()
             feature_cols = st.session_state.feature_cols
+            num_lags = st.session_state["num_lags"]
             for var in st.session_state.input_vars:
                 if st.session_state.var_types[var] == "Dynamic":
                     for lag in range(1, num_lags + 1):
@@ -477,7 +483,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 
                 input_vars = st.session_state.input_vars
                 output_var = st.session_state.output_var
-                num_lags = st.session_state.num_lags
+                num_lags = st.session_state["num_lags"]
                 feature_cols = st.session_state.feature_cols
                 
                 available_new_inputs = [col for col in new_df.columns if col in input_vars and col != date_col]
