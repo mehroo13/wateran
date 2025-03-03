@@ -116,9 +116,17 @@ with st.sidebar:
             
             output_var = st.selectbox("🎯 Output Variable", numeric_cols, help="Choose the variable to predict.")
             input_options = [col for col in numeric_cols if col != output_var]
-            # Ensure default is valid by selecting the first available option if it exists
             default_input = [input_options[0]] if input_options else []
             input_vars = st.multiselect("🔧 Input Variables", input_options, default=default_input, help="Select variables to use as inputs.")
+            
+            # Restore Static/Dynamic Variable Classification
+            with st.expander("Variable Types", expanded=True):
+                var_types = {}
+                if input_vars:  # Only show if input variables are selected
+                    for var in input_vars:
+                        var_types[var] = st.selectbox(f"{var} Type", ["Dynamic", "Static"], key=f"{var}_type", help=f"Dynamic: Varies over time; Static: Constant value.")
+                else:
+                    st.info("Select input variables to classify them as Static or Dynamic.")
         
         submit_data = st.form_submit_button("Submit Data")
         if submit_data and uploaded_file:
@@ -129,7 +137,7 @@ with st.sidebar:
             st.session_state.date_col = date_col
             st.session_state.output_var = output_var
             st.session_state.input_vars = input_vars
-            st.session_state.var_types = {var: "Dynamic" for var in input_vars}  # Default to Dynamic
+            st.session_state.var_types = var_types if input_vars else {}
 
     with st.form(key='config_form'):
         st.subheader("⚙️ Model Configuration")
@@ -294,7 +302,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 
                 new_var_types = {}
                 for var in selected_inputs:
-                    new_var_types[var] = st.selectbox(f"{var} Type", ["Dynamic", "Static"], help=f"Specify if {var} is time-dependent (Dynamic) or constant (Static).")
+                    new_var_types[var] = st.selectbox(f"{var} Type", ["Dynamic", "Static"], key=f"new_{var}_type", help=f"Specify if {var} is time-dependent (Dynamic) or constant (Static).")
 
             submit_predict = st.form_submit_button("🔍 Predict")
             if submit_predict and new_data_file:
