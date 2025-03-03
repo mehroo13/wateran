@@ -17,7 +17,7 @@ DEFAULT_LEARNING_RATE = 0.001
 DEFAULT_EPOCHS = 50
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_TRAIN_SPLIT = 80
-DEFAULT_NUM_LAGS = 3
+DEFAULT_NUM_LAGS = 1  # Reduced default number of lags to 1
 MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weights.h5")
 MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "gru_model_plot.png")
 
@@ -149,11 +149,11 @@ col1, col2 = st.columns([2, 1])
 with col1:
     st.subheader("📥 Data Input")
     uploaded_file = st.file_uploader("Upload Training Data (Excel)", type=["xlsx"], key="train_data")
-    
+
     if uploaded_file:
         df = pd.read_excel(uploaded_file)
         st.write("**Dataset Preview:**", df.head(5))
-        
+
         # Date column selection
         datetime_cols = [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col]) or "date" in col.lower()]
         date_col = None
@@ -166,13 +166,13 @@ with col1:
                 st.info("Using index for ordering.")
         else:
             st.info("No datetime column detected. Using index.")
-        
+
         # Numeric columns for variable selection
         numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and (date_col is None or col != date_col)]
         if len(numeric_cols) < 2:
             st.error("Dataset requires at least two numeric columns.")
             st.stop()
-        
+
         # Variable selection
         output_var = st.selectbox("🎯 Output Variable", numeric_cols, key="output_var_train")
         available_input_cols = [col for col in numeric_cols if col != output_var]
@@ -201,13 +201,13 @@ with col1:
 # Right Column: Model Settings and Actions
 with col2:
     st.subheader("⚙️ Model Configuration")
-    
+
     # Training Parameters
     epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10)
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8)
     train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
     num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags")
-    
+
     # Model Architecture
     with st.expander("Model Architecture", expanded=False):
         gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=1, step=1)
@@ -215,7 +215,7 @@ with col2:
         dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=1, step=1)
         dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(dense_layers)]
         learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f")
-    
+
     # Metrics Selection
     st.markdown("**Evaluation Metrics**")
     all_metrics = ["RMSE", "MAE", "R²", "NSE", "KGE", "PBIAS", "Peak Flow Error", "High Flow Bias", "Low Flow Bias", "Volume Error"]
@@ -240,15 +240,8 @@ with col2:
         with col_btn1:
             if st.button("🚀 Train Model"):
                 df = st.session_state.df.copy()
-                st.write("Original DataFrame columns:", df.columns.tolist())
-                st.write("Original DataFrame sample:", df.head())
-                
-                # Check for NaN in original data
-                selected_cols = st.session_state.input_vars + [st.session_state.output_var]
-                nan_summary = df[selected_cols].isnull().sum()
-                st.write("NaN values in original data (selected columns):", nan_summary.to_dict())
-                if nan_summary.sum() > 0:
-                    st.warning("Missing values detected in original data. These will be handled during preprocessing.")
+                st.write("Original DataFrame columns:", df.columns.tolist()) # Debugging line
+                st.write("Original DataFrame sample:", df.head()) # Debugging line
 
                 # Generate feature columns based on variable types and num_lags
                 feature_cols = []
@@ -257,34 +250,21 @@ with col2:
                         for lag in range(1, num_lags + 1):
                             df[f'{var}_Lag_{lag}'] = df[var].shift(lag)
                             feature_cols.append(f'{var}_Lag_{lag}')
-                    else:  # Static
-                        # Fill NaN in static variables; use 0 if nearly all values are NaN
-                        if df[var].isnull().sum() > len(df) * 0.9:  # If >90% missing
-                            df[var] = df[var].fillna(0)
-                            st.warning(f"{var} has over 90% missing values. Filled with 0.")
-                        else:
-                            df[var] = df[var].fillna(df[var].median())
+                    else: # Static
                         feature_cols.append(var)
                 for lag in range(1, num_lags + 1):
                     df[f'{st.session_state.output_var}_Lag_{lag}'] = df[st.session_state.output_var].shift(lag)
                     feature_cols.append(f'{st.session_state.output_var}_Lag_{lag}')
-                
-                st.write("DataFrame after adding lags (before dropna):", df.head())
-                st.write("Rows before dropna:", len(df))
-                
-                # Check NaN in all feature columns before dropna
-                nan_after_lags = df[feature_cols + [st.session_state.output_var]].isnull().sum()
-                st.write("NaN values after adding lags:", nan_after_lags.to_dict())
-                
-                # Drop rows where all dynamic lagged features are NaN, then fill remaining NaN
-                dynamic_lagged_cols = [col for col in feature_cols if "_Lag_" in col]
-                df = df.dropna(subset=dynamic_lagged_cols, how='all')  # Drop only if all lagged cols are NaN
-                df[feature_cols] = df[feature_cols].fillna(0)  # Fill remaining NaN with 0
-                st.write("DataFrame after dropna and fillna:", df.head())
-                st.write("Rows after preprocessing:", len(df))
-                
+
+                st.write("DataFrame after adding lags (before dropna):", df.head()) # Debugging line
+                st.write("Rows before dropna:", len(df)) # Debugging line
+                df.dropna(inplace=True)
+                st.write("DataFrame after dropna:", df.head()) # Debugging line
+                st.write("Rows after dropna:", len(df)) # Debugging line
+
+
                 if df.empty:
-                    st.error("DataFrame is empty after preprocessing. Check your data for pervasive missing values.")
+                    st.error("DataFrame is empty after removing NaN values. Check your data or reduce the number of lags.")
                     st.stop()
 
                 st.session_state.feature_cols = feature_cols
@@ -292,37 +272,34 @@ with col2:
                 if train_size <= 0 or train_size >= len(df):
                     st.error(f"Invalid train split: train_size={train_size}, total rows={len(df)}. Adjust the training percentage.")
                     st.stop()
-                
+
                 train_df, test_df = df[:train_size], df[train_size:]
-                st.write("Train DataFrame sample:", train_df.head())
-                st.write("Train DataFrame rows:", len(train_df))
-                st.write("Test DataFrame rows:", len(test_df))
-                
+
+
                 if train_df.empty:
                     st.error("Training DataFrame is empty after splitting. Check your data or train split percentage.")
                     st.stop()
 
                 scaler = MinMaxScaler()
                 data_to_scale = train_df[feature_cols + [st.session_state.output_var]].copy()
-                st.write("Columns to scale:", data_to_scale.columns.tolist())
-                st.write("Sample data before scaling:", data_to_scale.head())
+
 
                 # Check for empty data
                 if data_to_scale.empty:
                     st.error("No data available for scaling. Check your preprocessing steps.")
                     st.stop()
-                
+
                 # Ensure all columns are numeric
                 if not all(pd.api.types.is_numeric_dtype(data_to_scale[col]) for col in data_to_scale.columns):
                     non_numeric_cols = [col for col in data_to_scale.columns if not pd.api.types.is_numeric_dtype(data_to_scale[col])]
                     st.error(f"Non-numeric data detected in columns: {', '.join(non_numeric_cols)}")
                     st.stop()
-                
+
                 # Check for NaN values
                 if data_to_scale.isnull().any().any():
-                    st.error("NaN values detected in data to scale after preprocessing.")
+                    st.error("NaN values detected in data to scale after dropna.")
                     st.stop()
-                
+
                 # Convert to numeric
                 data_to_scale = data_to_scale.apply(pd.to_numeric, errors='coerce')
                 if data_to_scale.isnull().any().any():
@@ -333,7 +310,7 @@ with col2:
                 train_scaled = scaler.fit_transform(data_to_scale)
                 test_scaled = scaler.transform(test_df[feature_cols + [st.session_state.output_var]])
                 st.session_state.scaler = scaler
-                
+
                 X_train, y_train = train_scaled[:, :-1], train_scaled[:, -1]
                 X_test, y_test = test_scaled[:, :-1], test_scaled[:, -1]
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
@@ -472,7 +449,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
     with st.expander("🔮 New Predictions", expanded=False):
         st.subheader("Predict New Data")
         new_data_file = st.file_uploader("Upload New Data (Excel)", type=["xlsx"], key="new_data")
-        
+
         if new_data_file and new_data_file != st.session_state.new_data_file:
             st.session_state.new_data_file = new_data_file
             st.session_state.new_predictions_df = None
@@ -483,7 +460,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
         if st.session_state.new_data_file:
             new_df = pd.read_excel(st.session_state.new_data_file)
             st.write("**New Data Preview:**", new_df.head())
-            
+
             datetime_cols = [col for col in new_df.columns if pd.api.types.is_datetime64_any_dtype(new_df[col]) or "date" in col.lower()]
             if datetime_cols:
                 if st.session_state.new_date_col is None:
@@ -495,7 +472,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             else:
                 st.warning("No datetime column found. Predictions will use index.")
                 date_col = None
-            
+
             input_vars = st.session_state.input_vars
             output_var = st.session_state.output_var
             var_types = st.session_state.var_types
@@ -509,7 +486,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     st.session_state.selected_inputs = available_new_inputs
                 selected_inputs = st.multiselect("🔧 Input Variables for Prediction", available_new_inputs, default=st.session_state.selected_inputs, key="new_input_vars")
                 st.session_state.selected_inputs = selected_inputs
-                
+
                 if not selected_inputs:
                     st.error("Select at least one input variable.")
                 elif st.button("🔍 Predict"):
@@ -520,7 +497,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                             for lag in range(1, num_lags + 1):
                                 new_df[f'{var}_Lag_{lag}'] = new_df[var].shift(lag)
                                 feature_cols_new.append(f'{var}_Lag_{lag}')
-                        else:  # Static
+                        else: # Static
                             feature_cols_new.append(var)
                     for lag in range(1, num_lags + 1):
                         if output_var in new_df.columns:
@@ -529,7 +506,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                             new_df[f'{output_var}_Lag_{lag}'] = 0
                         feature_cols_new.append(f'{output_var}_Lag_{lag}')
                     new_df.dropna(inplace=True)
-                    
+
                     # Align new data with training feature columns
                     full_new_df = pd.DataFrame(index=new_df.index, columns=feature_cols + [output_var])
                     if output_var not in new_df.columns:
@@ -540,24 +517,24 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         if col in full_new_df.columns:
                             full_new_df[col] = new_df[col]
                     full_new_df.fillna(0, inplace=True)
-                    
+
                     scaler = st.session_state.scaler
                     new_scaled = scaler.transform(full_new_df[feature_cols + [output_var]])
                     X_new = new_scaled[:, :-1]
                     X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
-                    
+
                     model = build_gru_model((X_new.shape[1], X_new.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
                     model.load_weights(MODEL_WEIGHTS_PATH)
                     y_new_pred = model.predict(X_new)
                     y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
                     y_new_pred = np.clip(y_new_pred, 0, None)
-                    
+
                     dates = new_df[date_col] if date_col else pd.RangeIndex(len(new_df))
                     st.session_state.new_predictions_df = pd.DataFrame({
                         "Date": dates.values[-len(y_new_pred):],
                         f"Predicted_{output_var}": y_new_pred
                     })
-                    
+
                     fig, ax = plt.subplots(figsize=(12, 4))
                     if date_col:
                         ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
@@ -572,23 +549,23 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     ax.grid(True, linestyle='--', alpha=0.7)
                     plt.tight_layout()
                     st.session_state.new_fig = fig
-                
-                if st.session_state.new_predictions_df is not None:
-                    st.subheader("Prediction Results")
-                    st.write(st.session_state.new_predictions_df)
-                    col_new_plot, col_new_dl = st.columns([3, 1])
-                    with col_new_plot:
-                        if st.session_state.new_fig:
-                            st.pyplot(st.session_state.new_fig)
-                    with col_new_dl:
-                        if st.session_state.new_fig:
-                            buf = BytesIO()
-                            st.session_state.new_fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
-                            st.download_button("⬇️ Download Plot", buf.getvalue(), "new_prediction_plot.png", "image/png", key="new_plot_dl")
-                        if st.session_state.new_predictions_df is not None:
-                            new_csv = st.session_state.new_predictions_df.to_csv(index=False)
-                            st.download_button("⬇️ Download CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
-                    st.success("Predictions generated successfully!")
+
+                    if st.session_state.new_predictions_df is not None:
+                        st.subheader("Prediction Results")
+                        st.write(st.session_state.new_predictions_df)
+                        col_new_plot, col_new_dl = st.columns([3, 1])
+                        with col_new_plot:
+                            if st.session_state.new_fig:
+                                st.pyplot(st.session_state.new_fig)
+                        with col_new_dl:
+                            if st.session_state.new_fig:
+                                buf = BytesIO()
+                                st.session_state.new_fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
+                                st.download_button("⬇️ Download Plot", buf.getvalue(), "new_prediction_plot.png", "image/png", key="new_plot_dl")
+                            if st.session_state.new_predictions_df is not None:
+                                new_csv = st.session_state.new_predictions_df.to_csv(index=False)
+                                st.download_button("⬇️ Download CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
+                        st.success("Predictions generated successfully!")
 
 # Footer
 st.markdown("---")
