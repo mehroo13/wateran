@@ -119,10 +119,9 @@ with st.sidebar:
             default_input = [input_options[0]] if input_options else []
             input_vars = st.multiselect("🔧 Input Variables", input_options, default=default_input, help="Select variables to use as inputs.")
             
-            # Restore Static/Dynamic Variable Classification
             with st.expander("Variable Types", expanded=True):
                 var_types = {}
-                if input_vars:  # Only show if input variables are selected
+                if input_vars:
                     for var in input_vars:
                         var_types[var] = st.selectbox(f"{var} Type", ["Dynamic", "Static"], key=f"{var}_type", help=f"Dynamic: Varies over time; Static: Constant value.")
                 else:
@@ -242,9 +241,30 @@ if 'df' in st.session_state:
             y_train_actual = st.session_state.scaler.inverse_transform(np.hstack([y_train.reshape(-1, 1), X_train[:, 0, :]]))[:, 0]
             y_test_actual = st.session_state.scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :]]))[:, 0]
             
-            metrics = {m: {"Training": globals()[m.lower().replace(" ", "_")](y_train_actual, y_train_pred) if m in ["NSE", "KGE", "PBIAS", "Peak Flow Error", "High Flow Bias", "Low Flow Bias", "Volume Error"] else globals()[{"RMSE": "np.sqrt(mean_squared_error)", "MAE": "mean_absolute_error", "R²": "r2_score"}[m]](y_train_actual, y_train_pred),
-                           "Testing": globals()[m.lower().replace(" ", "_")](y_test_actual, y_test_pred) if m in ["NSE", "KGE", "PBIAS", "Peak Flow Error", "High Flow Bias", "Low Flow Bias", "Volume Error"] else globals()[{"RMSE": "np.sqrt(mean_squared_error)", "MAE": "mean_absolute_error", "R²": "r2_score"}[m]](y_test_actual, y_test_pred)}
-                       for m in st.session_state.selected_metrics}
+            # Fixed metrics calculation
+            metrics = {}
+            for m in st.session_state.selected_metrics:
+                if m in ["NSE", "KGE", "PBIAS", "Peak Flow Error", "High Flow Bias", "Low Flow Bias", "Volume Error"]:
+                    metric_func = globals()[m.lower().replace(" ", "_")]
+                    metrics[m] = {
+                        "Training": metric_func(y_train_actual, y_train_pred),
+                        "Testing": metric_func(y_test_actual, y_test_pred)
+                    }
+                elif m == "RMSE":
+                    metrics[m] = {
+                        "Training": np.sqrt(mean_squared_error(y_train_actual, y_train_pred)),
+                        "Testing": np.sqrt(mean_squared_error(y_test_actual, y_test_pred))
+                    }
+                elif m == "MAE":
+                    metrics[m] = {
+                        "Training": mean_absolute_error(y_train_actual, y_train_pred),
+                        "Testing": mean_absolute_error(y_test_actual, y_test_pred)
+                    }
+                elif m == "R²":
+                    metrics[m] = {
+                        "Training": r2_score(y_train_actual, y_train_pred),
+                        "Testing": r2_score(y_test_actual, y_test_pred)
+                    }
             st.session_state.metrics = metrics
             
             dates = df[st.session_state.date_col] if st.session_state.date_col != "None" else pd.RangeIndex(len(df))
