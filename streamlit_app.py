@@ -489,6 +489,17 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 st.warning("No datetime column found. Predictions will use index.")
                 date_col = None
             
+            # Variable type classification for new data (moved here)
+            with st.expander("New Data Variable Types", expanded=True):
+                if st.session_state.selected_inputs:
+                    new_var_types = {}
+                    for var in st.session_state.selected_inputs:
+                        var_type = st.selectbox(f"{var} Type (New Data)", ["Dynamic", "Static"], key=f"new_{var}_type")
+                        new_var_types[var] = var_type
+                    st.session_state.new_var_types = new_var_types
+                else:
+                    st.info("Please select input variables to assign types.")
+
             input_vars = st.session_state.input_vars
             output_var = st.session_state.output_var
             num_lags = st.session_state.num_lags
@@ -504,96 +515,90 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
             selected_inputs = st.multiselect("🔧 Input Variables for Prediction", available_new_inputs, default=st.session_state.selected_inputs, key="new_input_vars")
             st.session_state.selected_inputs = selected_inputs
             
-            # Variable type classification for new data
-            if selected_inputs:
-                with st.expander("New Data Variable Types", expanded=True):
-                    new_var_types = {}
-                    for var in selected_inputs:
-                        var_type = st.selectbox(f"{var} Type (New Data)", ["Dynamic", "Static"], key=f"new_{var}_type")
-                        new_var_types[var] = var_type
-                    st.session_state.new_var_types = new_var_types
-
-                if st.button("🔍 Predict"):
-                    if not st.session_state.new_var_types:
-                        st.error("Please assign variable types before predicting.")
-                        st.stop()
-                    
-                    # Generate feature columns for new data based on new_var_types
-                    feature_cols_new = []
-                    for var in selected_inputs:
-                        if st.session_state.new_var_types[var] == "Dynamic":
-                            for lag in range(1, num_lags + 1):
-                                new_df[f'{var}_Lag_{lag}'] = new_df[var].shift(lag)
-                                feature_cols_new.append(f'{var}_Lag_{lag}')
-                        else:  # Static
-                            feature_cols_new.append(var)
-                    for lag in range(1, num_lags + 1):
-                        if output_var in new_df.columns:
-                            new_df[f'{output_var}_Lag_{lag}'] = new_df[output_var].shift(lag)
-                        else:
-                            new_df[f'{output_var}_Lag_{lag}'] = 0
-                        feature_cols_new.append(f'{output_var}_Lag_{lag}')
-                    new_df.dropna(inplace=True)
-                    
-                    # Align new data with training feature columns
-                    full_new_df = pd.DataFrame(index=new_df.index, columns=feature_cols + [output_var])
-                    if output_var not in new_df.columns:
-                        full_new_df[output_var] = 0
-                    else:
-                        full_new_df[output_var] = new_df[output_var]
-                    for col in feature_cols_new:
-                        if col in full_new_df.columns:
-                            full_new_df[col] = new_df[col]
-                    full_new_df.fillna(0, inplace=True)
-                    
-                    scaler = st.session_state.scaler
-                    new_scaled = scaler.transform(full_new_df[feature_cols + [output_var]])
-                    X_new = new_scaled[:, :-1]
-                    X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
-                    
-                    model = build_gru_model((X_new.shape[1], X_new.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
-                    model.load_weights(MODEL_WEIGHTS_PATH)
-                    y_new_pred = model.predict(X_new)
-                    y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
-                    y_new_pred = np.clip(y_new_pred, 0, None)
-                    
-                    dates = new_df[date_col] if date_col else pd.RangeIndex(len(new_df))
-                    st.session_state.new_predictions_df = pd.DataFrame({
-                        "Date": dates.values[-len(y_new_pred):],
-                        f"Predicted_{output_var}": y_new_pred
-                    })
-                    
-                    fig, ax = plt.subplots(figsize=(12, 4))
-                    if date_col:
-                        ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
-                        ax.set_xlabel("Date")
-                        plt.xticks(rotation=45)
-                    else:
-                        ax.plot(y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
-                        ax.set_xlabel("Index")
-                    ax.set_title(f"New Predictions: {output_var}", fontsize=14)
-                    ax.set_ylabel(output_var)
-                    ax.legend()
-                    ax.grid(True, linestyle='--', alpha=0.7)
-                    plt.tight_layout()
-                    st.session_state.new_fig = fig
+            if st.button("🔍 Predict"):
+                if not selected_inputs:
+                    st.error("Please select at least one input variable.")
+                    st.stop()
+                if not st.session_state.new_var_types:
+                    st.error("Please assign variable types before predicting.")
+                    st.stop()
                 
-                if st.session_state.new_predictions_df is not None:
-                    st.subheader("Prediction Results")
-                    st.write(st.session_state.new_predictions_df)
-                    col_new_plot, col_new_dl = st.columns([3, 1])
-                    with col_new_plot:
-                        if st.session_state.new_fig:
-                            st.pyplot(st.session_state.new_fig)
-                    with col_new_dl:
-                        if st.session_state.new_fig:
-                            buf = BytesIO()
-                            st.session_state.new_fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
-                            st.download_button("⬇️ Download Plot", buf.getvalue(), "new_prediction_plot.png", "image/png", key="new_plot_dl")
-                        if st.session_state.new_predictions_df is not None:
-                            new_csv = st.session_state.new_predictions_df.to_csv(index=False)
-                            st.download_button("⬇️ Download CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
-                    st.success("Predictions generated successfully!")
+                # Generate feature columns for new data based on new_var_types
+                feature_cols_new = []
+                for var in selected_inputs:
+                    if st.session_state.new_var_types[var] == "Dynamic":
+                        for lag in range(1, num_lags + 1):
+                            new_df[f'{var}_Lag_{lag}'] = new_df[var].shift(lag)
+                            feature_cols_new.append(f'{var}_Lag_{lag}')
+                    else:  # Static
+                        feature_cols_new.append(var)
+                for lag in range(1, num_lags + 1):
+                    if output_var in new_df.columns:
+                        new_df[f'{output_var}_Lag_{lag}'] = new_df[output_var].shift(lag)
+                    else:
+                        new_df[f'{output_var}_Lag_{lag}'] = 0
+                    feature_cols_new.append(f'{output_var}_Lag_{lag}')
+                new_df.dropna(inplace=True)
+                
+                # Align new data with training feature columns
+                full_new_df = pd.DataFrame(index=new_df.index, columns=feature_cols + [output_var])
+                if output_var not in new_df.columns:
+                    full_new_df[output_var] = 0
+                else:
+                    full_new_df[output_var] = new_df[output_var]
+                for col in feature_cols_new:
+                    if col in full_new_df.columns:
+                        full_new_df[col] = new_df[col]
+                full_new_df.fillna(0, inplace=True)
+                
+                scaler = st.session_state.scaler
+                new_scaled = scaler.transform(full_new_df[feature_cols + [output_var]])
+                X_new = new_scaled[:, :-1]
+                X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
+                
+                model = build_gru_model((X_new.shape[1], X_new.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
+                model.load_weights(MODEL_WEIGHTS_PATH)
+                y_new_pred = model.predict(X_new)
+                y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
+                y_new_pred = np.clip(y_new_pred, 0, None)
+                
+                dates = new_df[date_col] if date_col else pd.RangeIndex(len(new_df))
+                st.session_state.new_predictions_df = pd.DataFrame({
+                    "Date": dates.values[-len(y_new_pred):],
+                    f"Predicted_{output_var}": y_new_pred
+                })
+                
+                fig, ax = plt.subplots(figsize=(12, 4))
+                if date_col:
+                    ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
+                    ax.set_xlabel("Date")
+                    plt.xticks(rotation=45)
+                else:
+                    ax.plot(y_new_pred, label="Predicted", color="#ff7f0e", linewidth=2)
+                    ax.set_xlabel("Index")
+                ax.set_title(f"New Predictions: {output_var}", fontsize=14)
+                ax.set_ylabel(output_var)
+                ax.legend()
+                ax.grid(True, linestyle='--', alpha=0.7)
+                plt.tight_layout()
+                st.session_state.new_fig = fig
+            
+            if st.session_state.new_predictions_df is not None:
+                st.subheader("Prediction Results")
+                st.write(st.session_state.new_predictions_df)
+                col_new_plot, col_new_dl = st.columns([3, 1])
+                with col_new_plot:
+                    if st.session_state.new_fig:
+                        st.pyplot(st.session_state.new_fig)
+                with col_new_dl:
+                    if st.session_state.new_fig:
+                        buf = BytesIO()
+                        st.session_state.new_fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
+                        st.download_button("⬇️ Download Plot", buf.getvalue(), "new_prediction_plot.png", "image/png", key="new_plot_dl")
+                    if st.session_state.new_predictions_df is not None:
+                        new_csv = st.session_state.new_predictions_df.to_csv(index=False)
+                        st.download_button("⬇️ Download CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
+                st.success("Predictions generated successfully!")
 
 # Footer
 st.markdown("---")
