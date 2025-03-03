@@ -240,6 +240,9 @@ with col2:
         with col_btn1:
             if st.button("🚀 Train Model"):
                 df = st.session_state.df.copy()
+                st.write("Original DataFrame columns:", df.columns.tolist())
+                st.write("Original DataFrame sample:", df.head())
+
                 # Generate feature columns based on variable types and num_lags
                 feature_cols = []
                 for var in st.session_state.input_vars:
@@ -252,18 +255,37 @@ with col2:
                 for lag in range(1, num_lags + 1):
                     df[f'{st.session_state.output_var}_Lag_{lag}'] = df[st.session_state.output_var].shift(lag)
                     feature_cols.append(f'{st.session_state.output_var}_Lag_{lag}')
-                df.dropna(inplace=True)
-                st.session_state.feature_cols = feature_cols
-
-                train_size = int(len(df) * train_split)
-                train_df, test_df = df[:train_size], df[train_size:]
-                scaler = MinMaxScaler()
                 
-                # Prepare data for scaling with validation
+                st.write("DataFrame after adding lags (before dropna):", df.head())
+                st.write("Rows before dropna:", len(df))
+                df.dropna(inplace=True)
+                st.write("DataFrame after dropna:", df.head())
+                st.write("Rows after dropna:", len(df))
+                
+                if df.empty:
+                    st.error("DataFrame is empty after removing NaN values. Check your data or reduce the number of lags.")
+                    st.stop()
+
+                st.session_state.feature_cols = feature_cols
+                train_size = int(len(df) * train_split)
+                if train_size <= 0 or train_size >= len(df):
+                    st.error(f"Invalid train split: train_size={train_size}, total rows={len(df)}. Adjust the training percentage.")
+                    st.stop()
+                
+                train_df, test_df = df[:train_size], df[train_size:]
+                st.write("Train DataFrame sample:", train_df.head())
+                st.write("Train DataFrame rows:", len(train_df))
+                st.write("Test DataFrame rows:", len(test_df))
+                
+                if train_df.empty:
+                    st.error("Training DataFrame is empty after splitting. Check your data or train split percentage.")
+                    st.stop()
+
+                scaler = MinMaxScaler()
                 data_to_scale = train_df[feature_cols + [st.session_state.output_var]].copy()
                 st.write("Columns to scale:", data_to_scale.columns.tolist())
                 st.write("Sample data before scaling:", data_to_scale.head())
-                
+
                 # Check for empty data
                 if data_to_scale.empty:
                     st.error("No data available for scaling. Check your preprocessing steps.")
@@ -277,10 +299,10 @@ with col2:
                 
                 # Check for NaN values
                 if data_to_scale.isnull().any().any():
-                    st.error("NaN values detected in data to scale after dropna. Please check your dataset.")
+                    st.error("NaN values detected in data to scale after dropna.")
                     st.stop()
                 
-                # Convert to numeric just to be safe
+                # Convert to numeric
                 data_to_scale = data_to_scale.apply(pd.to_numeric, errors='coerce')
                 if data_to_scale.isnull().any().any():
                     st.error("Some values could not be converted to numeric and resulted in NaN.")
@@ -546,3 +568,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                             new_csv = st.session_state.new_predictions_df.to_csv(index=False)
                             st.download_button("⬇️ Download CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
                     st.success("Predictions generated successfully!")
+
+# Footer
+st.markdown("---")
+st.markdown("**Built with ❤️ by xAI | Powered by GRU and Streamlit**")
