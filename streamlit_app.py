@@ -117,7 +117,8 @@ with st.sidebar.form(key='data_form'):
         output_var = st.selectbox("🎯 Output Variable", numeric_cols, help="Choose the variable to predict.")
         input_vars = st.multiselect("🔧 Input Variables", [col for col in numeric_cols if col != output_var], default=[numeric_cols[0]], help="Select variables to use as inputs.")
         
-        if st.form_submit_button("Submit Data"):
+        submit_data = st.form_submit_button("Submit Data")
+        if submit_data:
             st.session_state.df = df
             st.session_state.date_col = date_col
             st.session_state.output_var = output_var
@@ -141,7 +142,8 @@ with st.sidebar.form(key='config_form'):
     
     selected_metrics = st.multiselect("Evaluation Metrics", ["RMSE", "MAE", "R²", "NSE", "KGE", "PBIAS", "Peak Flow Error", "High Flow Bias", "Low Flow Bias", "Volume Error"], default=["RMSE", "MAE", "R²"], help="Metrics to evaluate model performance.")
     
-    if st.form_submit_button("Apply Settings"):
+    submit_config = st.form_submit_button("Apply Settings")
+    if submit_config:
         st.session_state.gru_layers = gru_layers
         st.session_state.dense_layers = dense_layers
         st.session_state.gru_units = gru_units
@@ -265,11 +267,80 @@ with st.expander("📊 Results", expanded=True):
 # New Predictions
 if os.path.exists(MODEL_WEIGHTS_PATH):
     with st.expander("🔮 New Predictions"):
-        new_data_file = st.file_uploader("Upload New Data (Excel)", type=["xlsx"])
-        if new_data_file:
-            new_df = pd.read_excel(new_data_file)
-            st.write(new_df.head())
-            # Add prediction logic here (simplified placeholder)
-            if st.button("Predict"):
-                st.write("Prediction logic to be implemented.")
-                # Full prediction logic can be added as needed
+        with st.form(key='new_predict_form'):
+            st.subheader("New Data Prediction")
+            new_data_file = st.file_uploader("Upload New Data (Excel)", type=["xlsx"], help="Upload an Excel file for predictions.")
+            
+            if new_data_file:
+                new_df = pd.read_excel(new_data_file)
+                st.write("Preview:", new_df.head())
+                
+                datetime_cols = [col for col in new_df.columns if pd.api.types.is_datetime64_any_dtype(new_df[col]) or "date" in col.lower()]
+                new_date_col = st.selectbox("Date Column (optional)", ["None"] + datetime_cols, index=0, help="Select a date column for the new data.") if datetime_cols else "None"
+                if new_date_col != "None":
+                    new_df[new_date_col] = pd.to_datetime(new_df[new_date_col])
+                    new_df = new_df.sort_values(new_date_col)
+                
+                available_new_inputs = [col for col in new_df.columns if col in st.session_state.input_vars and (new_date_col is None or col != new_date_col)]
+                if not available_new_inputs:
+                    st.error(f"No recognized input variables found. Expected: {', '.join(st.session_state.input_vars)}")
+                    st.stop()
+                selected_inputs = st.multiselect("🔧 Input Variables for Prediction", available_new_inputs, default=available_new_inputs, help="Select variables matching training inputs.")
+                
+                new_var_types = {}
+                for var in selected_inputs:
+                    new_var_types[var] = st.selectbox(f"{var} Type", ["Dynamic", "Static"], help=f"Specify if {var} is time-dependent (Dynamic) or constant (Static).")
+
+            submit_predict = st.form_submit_button("🔍 Predict")
+            if submit_predict and new_data_file:
+                if not selected_inputs:
+                    st.error("Please select at least one input variable.")
+                    st.stop()
+                
+                feature_cols_new = []
+                for var in selected_inputs:
+                    if new_var_types[var] == "Dynamic":
+                        for lag in range(1, st.session_state.num_lags + 1):
+                            new_df[f'{var}_Lag_{lag}'] = new_df[var].shift(lag)
+                            feature_cols_new.append(f'{var}_Lag_{lag}')
+                    else:
+                        feature_cols_new.append(var)
+                for lag in range(1, st.session_state.num_lags + 1):
+                    new_df[f'{st.session_state.output_var}_Lag_{lag}'] = new_df[st.session_state.output_var].shift(lag) if st.session_state.output_var in new_df.columns else 0
+                    feature_cols_new.append(f'{st.session_state.output_var}_Lag_{lag}')
+                
+                new_df = new_df.dropna(subset=[col for col in feature_cols_new if "_Lag_" in col], how='all')
+                new_df[feature_cols_new] = new_df[feature_cols_new].fillna(0)
+                
+                full_new_df = pd.DataFrame(index=new_df.index, columns=st.session_state.feature_cols + [st.session_state.output_var])
+                full_new_df[st.session_state.output_var] = new_df[st.session_state.output_var] if st.session_state.output_var in new_df.columns else 0
+                for col in feature_cols_new:
+                    if col in full_new_df.columns:
+                        full_new_df[col] = new_df[col]
+                full_new_df.fillna(0, inplace=True)
+                
+                new_scaled = st.session_state.scaler.transform(full_new_df[st.session_state.feature_cols + [st.session_state.output_var]])
+                X_new = new_scaled[:, :-1].reshape((new_scaled.shape[0], 1, new_scaled.shape[1] - 1))
+                
+                model = build_gru_model((X_new.shape[1], X_new.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
+                model.load_weights(MODEL_WEIGHTS_PATH)
+                y_new_pred = model.predict(X_new)
+                y_new_pred = st.session_state.scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
+                y_new_pred = np.clip(y_new_pred, 0, None)
+                
+                dates = new_df[new_date_col] if new_date_col != "None" else pd.RangeIndex(len(new_df))
+                st.session_state.new_predictions_df = pd.DataFrame({"Date": dates[-len(y_new_pred):], f"Predicted_{st.session_state.output_var}": y_new_pred})
+                
+                fig, ax = plt.subplots(figsize=(12, 4))
+                ax.plot(dates[-len(y_new_pred):], y_new_pred, label="Predicted", color="#ff7f0e")
+                ax.set_title(f"New Predictions: {st.session_state.output_var}")
+                ax.legend()
+                plt.tight_layout()
+                st.session_state.new_fig = fig
+                
+                st.write(st.session_state.new_predictions_df)
+                st.pyplot(st.session_state.new_fig)
+                buf = BytesIO()
+                st.session_state.new_fig.savefig(buf, format="png")
+                st.download_button("Download Plot", buf.getvalue(), "new_plot.png")
+                st.success("Predictions generated!")
