@@ -50,7 +50,7 @@ def high_flow_bias(actual, predicted, percentile=90):
 def low_flow_bias(actual, predicted, percentile=10):
     threshold = np.percentile(actual, percentile)
     low_actual = actual[actual <= threshold]
-    low_predicted = predicted[actual >= threshold]
+    low_predicted = predicted[actual <= threshold]
     if len(low_actual) > 0:
         return 100 * (np.mean(low_predicted) - np.mean(low_actual)) / np.mean(low_actual)
     return 0
@@ -523,6 +523,13 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     st.error("Please assign variable types before predicting.")
                     st.stop()
                 
+                # Check if new data has enough rows for the number of lags
+                dynamic_vars = [var for var in selected_inputs if st.session_state.new_var_types[var] == "Dynamic"]
+                min_rows_needed = num_lags + 1 if dynamic_vars else 1
+                if len(new_df) < min_rows_needed:
+                    st.error(f"New data has {len(new_df)} rows, but requires at least {min_rows_needed} rows for {num_lags} lags with {len(dynamic_vars)} dynamic variables. Add more data or reduce the number of lags.")
+                    st.stop()
+                
                 # Generate feature columns for new data based on new_var_types
                 feature_cols_new = []
                 for var in selected_inputs:
@@ -538,7 +545,11 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     else:
                         new_df[f'{output_var}_Lag_{lag}'] = 0
                     feature_cols_new.append(f'{output_var}_Lag_{lag}')
-                new_df.dropna(inplace=True)
+                
+                # Drop rows only if all lagged columns are NaN
+                dynamic_lagged_cols_new = [col for col in feature_cols_new if "_Lag_" in col]
+                if dynamic_lagged_cols_new:
+                    new_df.dropna(subset=dynamic_lagged_cols_new, how='all', inplace=True)
                 
                 if new_df.empty:
                     st.error("New DataFrame is empty after preprocessing. Check your data or reduce the number of lags.")
