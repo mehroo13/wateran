@@ -115,10 +115,16 @@ with st.sidebar:
                 st.stop()
             
             output_var = st.selectbox("🎯 Output Variable", numeric_cols, help="Choose the variable to predict.")
-            input_vars = st.multiselect("🔧 Input Variables", [col for col in numeric_cols if col != output_var], default=[numeric_cols[0]], help="Select variables to use as inputs.")
+            input_options = [col for col in numeric_cols if col != output_var]
+            # Ensure default is valid by selecting the first available option if it exists
+            default_input = [input_options[0]] if input_options else []
+            input_vars = st.multiselect("🔧 Input Variables", input_options, default=default_input, help="Select variables to use as inputs.")
         
         submit_data = st.form_submit_button("Submit Data")
         if submit_data and uploaded_file:
+            if not input_vars:
+                st.error("Please select at least one input variable.")
+                st.stop()
             st.session_state.df = df
             st.session_state.date_col = date_col
             st.session_state.output_var = output_var
