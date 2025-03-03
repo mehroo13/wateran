@@ -50,7 +50,7 @@ def high_flow_bias(actual, predicted, percentile=90):
 def low_flow_bias(actual, predicted, percentile=10):
     threshold = np.percentile(actual, percentile)
     low_actual = actual[actual <= threshold]
-    low_predicted = predicted[actual <= threshold]
+    low_predicted = predicted[actual >= threshold]
     if len(low_actual) > 0:
         return 100 * (np.mean(low_predicted) - np.mean(low_actual)) / np.mean(low_actual)
     return 0
@@ -540,13 +540,23 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     feature_cols_new.append(f'{output_var}_Lag_{lag}')
                 new_df.dropna(inplace=True)
                 
+                if new_df.empty:
+                    st.error("New DataFrame is empty after preprocessing. Check your data or reduce the number of lags.")
+                    st.stop()
+                
                 # Align new data with training feature columns
                 full_new_df = pd.DataFrame(index=new_df.index, columns=feature_cols + [output_var])
                 full_new_df[output_var] = new_df[output_var] if output_var in new_df.columns else 0
                 for col in feature_cols_new:
                     if col in full_new_df.columns and col in new_df.columns:
                         full_new_df[col] = new_df[col]
-                full_new_df.fillna(0, inplace=True)  # Fill missing columns with 0 to match training
+                full_new_df.fillna(0, inplace=True)  # Fill missing columns with 0
+                
+                # Ensure numeric data
+                full_new_df = full_new_df[feature_cols + [output_var]].apply(pd.to_numeric, errors='coerce')
+                if full_new_df.isnull().any().any():
+                    st.error("Non-numeric or NaN values found in new data after conversion. Check your input data.")
+                    st.stop()
                 
                 # Debugging: Check column alignment
                 expected_cols = feature_cols + [output_var]
