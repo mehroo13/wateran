@@ -196,7 +196,7 @@ with col1:
         st.session_state.output_var = output_var
         st.session_state.var_types = var_types
         st.session_state.date_col = date_col
-        st.session_state.df = df  # Store dataframe for later use
+        st.session_state.df = df
 
 # Right Column: Model Settings and Actions
 with col2:
@@ -239,7 +239,7 @@ with col2:
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             if st.button("🚀 Train Model"):
-                df = st.session_state.df.copy()  # Use a copy to avoid modifying original
+                df = st.session_state.df.copy()
                 # Generate feature columns based on variable types and num_lags
                 feature_cols = []
                 for var in st.session_state.input_vars:
@@ -258,9 +258,39 @@ with col2:
                 train_size = int(len(df) * train_split)
                 train_df, test_df = df[:train_size], df[train_size:]
                 scaler = MinMaxScaler()
-                train_scaled = scaler.fit_transform(train_df[feature_cols + [st.session_state.output_var]])
+                
+                # Prepare data for scaling with validation
+                data_to_scale = train_df[feature_cols + [st.session_state.output_var]].copy()
+                st.write("Columns to scale:", data_to_scale.columns.tolist())
+                st.write("Sample data before scaling:", data_to_scale.head())
+                
+                # Check for empty data
+                if data_to_scale.empty:
+                    st.error("No data available for scaling. Check your preprocessing steps.")
+                    st.stop()
+                
+                # Ensure all columns are numeric
+                if not all(pd.api.types.is_numeric_dtype(data_to_scale[col]) for col in data_to_scale.columns):
+                    non_numeric_cols = [col for col in data_to_scale.columns if not pd.api.types.is_numeric_dtype(data_to_scale[col])]
+                    st.error(f"Non-numeric data detected in columns: {', '.join(non_numeric_cols)}")
+                    st.stop()
+                
+                # Check for NaN values
+                if data_to_scale.isnull().any().any():
+                    st.error("NaN values detected in data to scale after dropna. Please check your dataset.")
+                    st.stop()
+                
+                # Convert to numeric just to be safe
+                data_to_scale = data_to_scale.apply(pd.to_numeric, errors='coerce')
+                if data_to_scale.isnull().any().any():
+                    st.error("Some values could not be converted to numeric and resulted in NaN.")
+                    st.stop()
+
+                # Scale the data
+                train_scaled = scaler.fit_transform(data_to_scale)
                 test_scaled = scaler.transform(test_df[feature_cols + [st.session_state.output_var]])
                 st.session_state.scaler = scaler
+                
                 X_train, y_train = train_scaled[:, :-1], train_scaled[:, -1]
                 X_test, y_test = test_scaled[:, :-1], test_scaled[:, -1]
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
@@ -453,7 +483,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         if output_var in new_df.columns:
                             new_df[f'{output_var}_Lag_{lag}'] = new_df[output_var].shift(lag)
                         else:
-                            new_df[f'{output_var}_Lag_{lag}'] = 0  # Fill with 0 if output_var isn't in new data
+                            new_df[f'{output_var}_Lag_{lag}'] = 0
                         feature_cols_new.append(f'{output_var}_Lag_{lag}')
                     new_df.dropna(inplace=True)
                     
@@ -516,7 +546,3 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                             new_csv = st.session_state.new_predictions_df.to_csv(index=False)
                             st.download_button("⬇️ Download CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
                     st.success("Predictions generated successfully!")
-
-# Footer
-st.markdown("---")
-st.markdown("**Built with ❤️ by xAI | Powered by GRU and Streamlit**")
