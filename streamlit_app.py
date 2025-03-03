@@ -542,17 +542,28 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 
                 # Align new data with training feature columns
                 full_new_df = pd.DataFrame(index=new_df.index, columns=feature_cols + [output_var])
-                if output_var not in new_df.columns:
-                    full_new_df[output_var] = 0
-                else:
-                    full_new_df[output_var] = new_df[output_var]
+                full_new_df[output_var] = new_df[output_var] if output_var in new_df.columns else 0
                 for col in feature_cols_new:
-                    if col in full_new_df.columns:
+                    if col in full_new_df.columns and col in new_df.columns:
                         full_new_df[col] = new_df[col]
-                full_new_df.fillna(0, inplace=True)
+                full_new_df.fillna(0, inplace=True)  # Fill missing columns with 0 to match training
+                
+                # Debugging: Check column alignment
+                expected_cols = feature_cols + [output_var]
+                actual_cols = full_new_df.columns.tolist()
+                if set(expected_cols) != set(actual_cols):
+                    missing_cols = set(expected_cols) - set(actual_cols)
+                    extra_cols = set(actual_cols) - set(expected_cols)
+                    error_msg = "Feature mismatch between training and new data:\n"
+                    if missing_cols:
+                        error_msg += f"Missing columns: {missing_cols}\n"
+                    if extra_cols:
+                        error_msg += f"Extra columns: {extra_cols}"
+                    st.error(error_msg)
+                    st.stop()
                 
                 scaler = st.session_state.scaler
-                new_scaled = scaler.transform(full_new_df[feature_cols + [output_var]])
+                new_scaled = scaler.transform(full_new_df[expected_cols])  # Use exact column order from training
                 X_new = new_scaled[:, :-1]
                 X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
                 
@@ -599,3 +610,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         new_csv = st.session_state.new_predictions_df.to_csv(index=False)
                         st.download_button("⬇️ Download CSV", new_csv, "new_predictions.csv", "text/csv", key="new_csv_dl")
                 st.success("Predictions generated successfully!")
+
+# Footer
+st.markdown("---")
+st.markdown("**Built with ❤️ by xAI | Powered by GRU and Streamlit**")
