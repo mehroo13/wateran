@@ -95,62 +95,61 @@ with st.sidebar:
     st.title("🌊 Wateran")
     st.markdown("**Predict time series with GRU**")
 
-with st.sidebar.form(key='data_form'):
-    st.subheader("📥 Data Input")
-    uploaded_file = st.file_uploader("Upload Training Data (Excel)", type=["xlsx"], help="Upload an Excel file with your time series data.")
-    
-    if uploaded_file:
-        df = pd.read_excel(uploaded_file)
-        st.write("Preview:", df.head(5))
+    with st.form(key='data_form'):
+        st.subheader("📥 Data Input")
+        uploaded_file = st.file_uploader("Upload Training Data (Excel)", type=["xlsx"], help="Upload an Excel file with your time series data.")
         
-        datetime_cols = [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col]) or "date" in col.lower()]
-        date_col = st.selectbox("Date Column (optional)", ["None"] + datetime_cols, index=0, help="Select a column with dates, or use index if none.") if datetime_cols else "None"
-        if date_col != "None":
-            df[date_col] = pd.to_datetime(df[date_col])
-            df = df.sort_values(date_col)
-        
-        numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and (date_col is None or col != date_col)]
-        if len(numeric_cols) < 2:
-            st.error("Need at least two numeric columns.")
-            st.stop()
-        
-        output_var = st.selectbox("🎯 Output Variable", numeric_cols, help="Choose the variable to predict.")
-        input_vars = st.multiselect("🔧 Input Variables", [col for col in numeric_cols if col != output_var], default=[numeric_cols[0]], help="Select variables to use as inputs.")
+        if uploaded_file:
+            df = pd.read_excel(uploaded_file)
+            st.write("Preview:", df.head(5))
+            
+            datetime_cols = [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col]) or "date" in col.lower()]
+            date_col = st.selectbox("Date Column (optional)", ["None"] + datetime_cols, index=0, help="Select a column with dates, or use index if none.") if datetime_cols else "None"
+            if date_col != "None":
+                df[date_col] = pd.to_datetime(df[date_col])
+                df = df.sort_values(date_col)
+            
+            numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and (date_col is None or col != date_col)]
+            if len(numeric_cols) < 2:
+                st.error("Need at least two numeric columns.")
+                st.stop()
+            
+            output_var = st.selectbox("🎯 Output Variable", numeric_cols, help="Choose the variable to predict.")
+            input_vars = st.multiselect("🔧 Input Variables", [col for col in numeric_cols if col != output_var], default=[numeric_cols[0]], help="Select variables to use as inputs.")
         
         submit_data = st.form_submit_button("Submit Data")
-        if submit_data:
+        if submit_data and uploaded_file:
             st.session_state.df = df
             st.session_state.date_col = date_col
             st.session_state.output_var = output_var
             st.session_state.input_vars = input_vars
             st.session_state.var_types = {var: "Dynamic" for var in input_vars}  # Default to Dynamic
 
-# Sidebar for Model Configuration
-with st.sidebar.form(key='config_form'):
-    st.subheader("⚙️ Model Configuration")
-    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, help="Number of training iterations.")
-    batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8, help="Number of samples per gradient update.")
-    train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT, help="Percentage of data for training.") / 100
-    num_lags = st.number_input("Number of Lags", 1, 10, DEFAULT_NUM_LAGS, step=1, help="Time steps to look back.")
-    
-    with st.expander("Advanced Architecture"):
-        gru_layers = st.number_input("GRU Layers", 1, 5, 1, help="Number of GRU layers.")
-        gru_units = [st.number_input(f"GRU Layer {i+1} Units", 8, 512, DEFAULT_GRU_UNITS, step=8) for i in range(gru_layers)]
-        dense_layers = st.number_input("Dense Layers", 1, 5, 1, help="Number of dense layers.")
-        dense_units = [st.number_input(f"Dense Layer {i+1} Units", 8, 512, DEFAULT_DENSE_UNITS, step=8) for i in range(dense_layers)]
-        learning_rate = st.number_input("Learning Rate", 0.00001, 0.1, DEFAULT_LEARNING_RATE, format="%.5f", help="Step size for optimization.")
-    
-    selected_metrics = st.multiselect("Evaluation Metrics", ["RMSE", "MAE", "R²", "NSE", "KGE", "PBIAS", "Peak Flow Error", "High Flow Bias", "Low Flow Bias", "Volume Error"], default=["RMSE", "MAE", "R²"], help="Metrics to evaluate model performance.")
-    
-    submit_config = st.form_submit_button("Apply Settings")
-    if submit_config:
-        st.session_state.gru_layers = gru_layers
-        st.session_state.dense_layers = dense_layers
-        st.session_state.gru_units = gru_units
-        st.session_state.dense_units = dense_units
-        st.session_state.learning_rate = learning_rate
-        st.session_state.selected_metrics = selected_metrics
-        st.session_state.num_lags = num_lags
+    with st.form(key='config_form'):
+        st.subheader("⚙️ Model Configuration")
+        epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, help="Number of training iterations.")
+        batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8, help="Number of samples per gradient update.")
+        train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT, help="Percentage of data for training.") / 100
+        num_lags = st.number_input("Number of Lags", 1, 10, DEFAULT_NUM_LAGS, step=1, help="Time steps to look back.")
+        
+        with st.expander("Advanced Architecture"):
+            gru_layers = st.number_input("GRU Layers", 1, 5, 1, help="Number of GRU layers.")
+            gru_units = [st.number_input(f"GRU Layer {i+1} Units", 8, 512, DEFAULT_GRU_UNITS, step=8) for i in range(gru_layers)]
+            dense_layers = st.number_input("Dense Layers", 1, 5, 1, help="Number of dense layers.")
+            dense_units = [st.number_input(f"Dense Layer {i+1} Units", 8, 512, DEFAULT_DENSE_UNITS, step=8) for i in range(dense_layers)]
+            learning_rate = st.number_input("Learning Rate", 0.00001, 0.1, DEFAULT_LEARNING_RATE, format="%.5f", help="Step size for optimization.")
+        
+        selected_metrics = st.multiselect("Evaluation Metrics", ["RMSE", "MAE", "R²", "NSE", "KGE", "PBIAS", "Peak Flow Error", "High Flow Bias", "Low Flow Bias", "Volume Error"], default=["RMSE", "MAE", "R²"], help="Metrics to evaluate model performance.")
+        
+        submit_config = st.form_submit_button("Apply Settings")
+        if submit_config:
+            st.session_state.gru_layers = gru_layers
+            st.session_state.dense_layers = dense_layers
+            st.session_state.gru_units = gru_units
+            st.session_state.dense_units = dense_units
+            st.session_state.learning_rate = learning_rate
+            st.session_state.selected_metrics = selected_metrics
+            st.session_state.num_lags = num_lags
 
 # Main Area
 st.header("Model Training and Results")
