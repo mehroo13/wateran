@@ -22,7 +22,41 @@ MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weig
 MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "gru_model_plot.png")
 
 # -------------------- Metric Functions --------------------
-# (Metric functions remain unchanged: nse, kge, pbias, peak_flow_error, high_flow_bias, low_flow_bias, volume_error)
+def nse(actual, predicted):
+    return 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - np.mean(actual)) ** 2))
+
+def kge(actual, predicted):
+    r = np.corrcoef(actual, predicted)[0, 1]
+    alpha = np.std(predicted) / np.std(actual)
+    beta = np.mean(predicted) / np.mean(actual)
+    return 1 - np.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
+
+def pbias(actual, predicted):
+    return 100 * (np.sum(predicted - actual) / np.sum(actual))
+
+def peak_flow_error(actual, predicted):
+    actual_peak = np.max(actual)
+    predicted_peak = np.max(predicted)
+    return (predicted_peak - actual_peak) / actual_peak * 100 if actual_peak != 0 else 0
+
+def high_flow_bias(actual, predicted, percentile=90):
+    threshold = np.percentile(actual, percentile)
+    high_actual = actual[actual >= threshold]
+    high_predicted = predicted[actual >= threshold]
+    if len(high_actual) > 0:
+        return 100 * (np.mean(high_predicted) - np.mean(high_actual)) / np.mean(high_actual)
+    return 0
+
+def low_flow_bias(actual, predicted, percentile=10):
+    threshold = np.percentile(actual, percentile)
+    low_actual = actual[actual <= threshold]
+    low_predicted = predicted[actual <= threshold]
+    if len(low_actual) > 0:
+        return 100 * (np.mean(low_predicted) - np.mean(low_actual)) / np.mean(low_actual)
+    return 0
+
+def volume_error(actual, predicted):
+    return 100 * (np.sum(predicted) - np.sum(actual)) / np.sum(actual)
 
 # -------------------- Custom Callback for Epoch Tracking --------------------
 class StreamlitProgressCallback(tf.keras.callbacks.Callback):
@@ -56,13 +90,11 @@ def build_gru_model(input_shape, gru_layers, dense_layers, gru_units, dense_unit
 # -------------------- Streamlit UI --------------------
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
-# Branding
+# Sidebar for Data Upload and Variable Selection
 with st.sidebar:
-    st.image("path_to_your_logo.png", width=150)  # Replace with your logo path
     st.title("🌊 Wateran")
     st.markdown("**Predict time series with GRU**")
 
-# Sidebar for Data Upload and Variable Selection
 with st.sidebar.form(key='data_form'):
     st.subheader("📥 Data Input")
     uploaded_file = st.file_uploader("Upload Training Data (Excel)", type=["xlsx"], help="Upload an Excel file with your time series data.")
@@ -125,7 +157,6 @@ if 'df' in st.session_state:
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🚀 Train Model"):
-            # Training logic (unchanged, adapted to use session state variables)
             df = st.session_state.df.copy()
             feature_cols = []
             for var in st.session_state.input_vars:
@@ -155,7 +186,7 @@ if 'df' in st.session_state:
             y_train = train_scaled[:, -1]
             X_test = test_scaled[:, :-1].reshape((test_scaled.shape[0], 1, test_scaled.shape[1] - 1))
             
-            model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
+            model = build_gru_model((X_train.shape[1], X_train.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
             with st.spinner("Training..."):
                 progress_placeholder = st.empty()
                 model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, callbacks=[StreamlitProgressCallback(epochs, progress_placeholder)])
@@ -164,7 +195,6 @@ if 'df' in st.session_state:
 
     with col2:
         if st.button("🔍 Test Model") and os.path.exists(MODEL_WEIGHTS_PATH):
-            # Testing logic (unchanged, adapted)
             df = st.session_state.df.copy()
             for var in st.session_state.input_vars:
                 if st.session_state.var_types[var] == "Dynamic":
@@ -188,7 +218,7 @@ if 'df' in st.session_state:
             X_test = test_scaled[:, :-1].reshape((test_scaled.shape[0], 1, test_scaled.shape[1] - 1))
             y_test = test_scaled[:, -1]
             
-            model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
+            model = build_gru_model((X_train.shape[1], X_train.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
             model.load_weights(MODEL_WEIGHTS_PATH)
             y_train_pred = model.predict(X_train)
             y_test_pred = model.predict(X_test)
@@ -239,7 +269,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
         if new_data_file:
             new_df = pd.read_excel(new_data_file)
             st.write(new_df.head())
-            # Prediction logic (simplified for brevity, adapt as needed)
+            # Add prediction logic here (simplified placeholder)
             if st.button("Predict"):
-                # Use trained model for predictions
-                pass
+                st.write("Prediction logic to be implemented.")
+                # Full prediction logic can be added as needed
