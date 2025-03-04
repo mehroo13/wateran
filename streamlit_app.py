@@ -193,7 +193,15 @@ with col1:
         # Variable selection
         st.markdown("**Variable Selection**")
         output_var = st.selectbox("🎯 Output Variable", numeric_cols, key="output_var_train", help="Variable to predict (e.g., streamflow).")
-        input_vars = st.multiselect("🔧 Input Variables", [col for col in numeric_cols if col != output_var], default=[numeric_cols[0]], key="input_vars_train", help="Features for prediction (e.g., rainfall).")
+        available_input_cols = [col for col in numeric_cols if col != output_var]
+        default_input = [available_input_cols[0]] if available_input_cols else []
+        input_vars = st.multiselect(
+            "🔧 Input Variables",
+            available_input_cols,
+            default=default_input,
+            key="input_vars_train",
+            help="Features for prediction (e.g., rainfall)."
+        )
         if not input_vars:
             st.error("Select at least one input variable.")
             st.stop()
