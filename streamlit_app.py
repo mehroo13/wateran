@@ -14,22 +14,21 @@ from tensorflow.keras.utils import plot_model
 import plotly.graph_objects as go
 
 # -------------------- Model Parameters --------------------
-DEFAULT_RNN_UNITS = 64
+DEFAULT_GRU_UNITS = 64
 DEFAULT_DENSE_UNITS = 32
 DEFAULT_LEARNING_RATE = 0.001
 DEFAULT_EPOCHS = 50
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_TRAIN_SPLIT = 80
 DEFAULT_NUM_LAGS = 3
-MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "rnn_model_weights.weights.h5")
-MODEL_FULL_PATH = os.path.join(tempfile.gettempdir(), "rnn_model.h5")
-MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "rnn_model_plot.png")
-DEFAULT_MODEL_SAVE_PATH = "rnn_model_saved.h5"
+MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weights.h5")
+MODEL_FULL_PATH = os.path.join(tempfile.gettempdir(), "gru_model.h5")
+MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "gru_model_plot.png")
+DEFAULT_MODEL_SAVE_PATH = "gru_model_saved.h5"
 DEFAULT_TRAIN_CSV_PATH = "train_results.csv"
 DEFAULT_TEST_CSV_PATH = "test_results.csv"
 
 # -------------------- Metric Functions --------------------
-# Define these functions BEFORE they are referenced in all_metrics_dict
 def nse(actual, predicted):
     return 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - np.mean(actual)) ** 2))
 
@@ -63,7 +62,6 @@ def volume_error(actual, predicted):
     return 100 * (np.sum(predicted) - np.sum(actual)) / np.sum(actual)
 
 # -------------------- Metrics Dictionary --------------------
-# Now that the functions are defined, this dictionary can reference them
 all_metrics_dict = {
     "RMSE": lambda a, p: np.sqrt(mean_squared_error(a, p)),
     "MAE": lambda a, p: mean_absolute_error(a, p),
@@ -91,20 +89,16 @@ class StreamlitProgressCallback(tf.keras.callbacks.Callback):
         self.progress_placeholder.progress(min(progress, 1.0))
         self.progress_placeholder.text(f"Epoch {self.current_epoch}/{self.total_epochs} completed")
 
-# -------------------- RNN Model Definition --------------------
+# -------------------- Model Definition --------------------
 @st.cache_resource
-def build_model(input_shape, model_type, rnn_layers, dense_layers, rnn_units, dense_units, learning_rate):
+def build_model(input_shape, model_type, gru_layers, dense_layers, gru_units, dense_units, learning_rate):
     model = tf.keras.Sequential()
-    for i in range(rnn_layers):
+    for i in range(gru_layers):
         if model_type == "GRU":
-            rnn_layer = tf.keras.layers.GRU
+            layer = tf.keras.layers.GRU(gru_units[i], return_sequences=(i < gru_layers - 1), input_shape=input_shape if i == 0 else None)
         elif model_type == "LSTM":
-            rnn_layer = tf.keras.layers.LSTM
-        
-        if i == 0:
-            model.add(rnn_layer(rnn_units[i], return_sequences=(i < rnn_layers - 1), input_shape=input_shape))
-        else:
-            model.add(rnn_layer(rnn_units[i], return_sequences=(i < rnn_layers - 1)))
+            layer = tf.keras.layers.LSTM(gru_units[i], return_sequences=(i < gru_layers - 1), input_shape=input_shape if i == 0 else None)
+        model.add(layer)
         model.add(tf.keras.layers.Dropout(0.2))
     for units in dense_units[:dense_layers]:
         model.add(tf.keras.layers.Dense(units, activation='relu'))
@@ -177,14 +171,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🌊 Wateran: Time Series Prediction with RNN")
-st.markdown("**Simple, Fast, and Accurate Predictions Powered by GRU or LSTM Neural Networks**", unsafe_allow_html=True)
+st.title("🌊 Wateran: Time Series Prediction")
+st.markdown("**Simple, Fast, and Accurate Predictions Powered by Neural Networks**", unsafe_allow_html=True)
 
 # Initialize session state
+if 'model_type' not in st.session_state:
+    st.session_state.model_type = "GRU"  # Default to GRU
 for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot', 'scaler', 'input_vars', 'output_var', 
-            'new_predictions_df', 'new_fig', 'rnn_layers', 'dense_layers', 'rnn_units', 'dense_units', 'learning_rate', 
+            'new_predictions_df', 'new_fig', 'gru_layers', 'dense_layers', 'gru_units', 'dense_units', 'learning_rate', 
             'feature_cols', 'new_data_file', 'selected_inputs', 'new_date_col', 'selected_metrics', 'var_types', 
-            'new_var_types', 'num_lags', 'date_col', 'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model', 'model_type']:
+            'new_var_types', 'num_lags', 'date_col', 'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model']:
     if key not in st.session_state:
         st.session_state[key] = None if key != 'num_lags' else DEFAULT_NUM_LAGS
 
@@ -197,7 +193,7 @@ with st.sidebar:
     st.button("🔮 New Predictions", key="nav_predict")
     with st.expander("ℹ️ Help"):
         st.markdown("""
-        - **RNN Layers**: Recurrent layers (GRU or LSTM) for time dependencies (1-5 recommended).
+        - **GRU Layers**: Recurrent layers for time dependencies (1-5 recommended).
         - **Dense Layers**: Fully connected layers for output refinement.
         - **Dynamic Variables**: Use lagged values for time series modeling.
         - **Static Variables**: Constant features, no lags applied.
@@ -266,8 +262,8 @@ with col1:
 with col2:
     st.subheader("⚙️ Model Configuration", divider="blue")
     
-    model_type = st.selectbox("Model Type", ["GRU", "LSTM"], index=0, key="model_type", help="Choose between GRU or LSTM architecture.")
-    st.session_state.model_type = model_type
+    # Model Type Selection
+    model_type = st.selectbox("Model Type", ["GRU", "LSTM"], index=0, key="model_type_select", help="Choose between GRU or LSTM architecture.")
     
     st.markdown("**Training Parameters**")
     epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10)
@@ -276,13 +272,13 @@ with col2:
     st.number_input("Number of Lags", min_value=1, max_value=10, value=DEFAULT_NUM_LAGS if st.session_state.num_lags is None else st.session_state.num_lags, step=1, key="num_lags")
     
     with st.expander("Model Architecture", expanded=False):
-        rnn_layers = st.number_input("RNN Layers", min_value=1, max_value=5, value=1, step=1, help="Number of GRU or LSTM layers.")
-        rnn_units = [st.number_input(f"RNN Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_RNN_UNITS, step=8, key=f"rnn_{i}") for i in range(rnn_layers)]
+        gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=1, step=1, help="Number of GRU or LSTM layers depending on model type.")
+        gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}") for i in range(gru_layers)]
         dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=1, step=1)
         dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(dense_layers)]
         learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f")
-        st.session_state.rnn_layers = rnn_layers
-        st.session_state.rnn_units = rnn_units
+        st.session_state.gru_layers = gru_layers
+        st.session_state.gru_units = gru_units
         st.session_state.dense_layers = dense_layers
         st.session_state.dense_units = dense_units
         st.session_state.learning_rate = learning_rate
@@ -296,6 +292,7 @@ with col2:
         col_btn1, col_btn2, col_btn3 = st.columns(3)
         with col_btn1:
             if st.button("🚀 Train Model"):
+                st.session_state.model_type = model_type  # Set model_type in session state only when button is clicked
                 df = st.session_state.df.copy()
                 selected_cols = st.session_state.input_vars + [st.session_state.output_var]
                 if df[selected_cols].isnull().sum().sum() > 0:
@@ -338,11 +335,11 @@ with col2:
                 st.session_state.model = build_model(
                     (X_train.shape[1], X_train.shape[2]), 
                     st.session_state.model_type, 
-                    rnn_layers, 
-                    dense_layers, 
-                    rnn_units, 
-                    dense_units, 
-                    learning_rate
+                    st.session_state.gru_layers, 
+                    st.session_state.dense_layers, 
+                    st.session_state.gru_units, 
+                    st.session_state.dense_units, 
+                    st.session_state.learning_rate
                 )
                 early_stopping = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=10, restore_best_weights=True)
                 lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.5, patience=5)
@@ -355,7 +352,7 @@ with col2:
                 st.success("Model trained and saved successfully!")
         
         with col_btn2:
-            if st.button("🤖 Suggest RNN Units"):
+            if st.button("🤖 Suggest GRU Units"):
                 if "X_train" not in st.session_state or "y_train" not in st.session_state:
                     st.error("Please train the model first to generate training data.")
                 else:
@@ -367,6 +364,7 @@ with col2:
                 if not os.path.exists(MODEL_WEIGHTS_PATH):
                     st.error("Train the model first!")
                     st.stop()
+                st.session_state.model_type = model_type  # Update model_type when testing
                 df = st.session_state.df.copy()
                 feature_cols = st.session_state.feature_cols
                 num_lags = st.session_state["num_lags"]
@@ -395,11 +393,11 @@ with col2:
                 st.session_state.model = build_model(
                     (X_train.shape[1], X_train.shape[2]), 
                     st.session_state.model_type, 
-                    rnn_layers, 
-                    dense_layers, 
-                    rnn_units, 
-                    dense_units, 
-                    learning_rate
+                    st.session_state.gru_layers, 
+                    st.session_state.dense_layers, 
+                    st.session_state.gru_units, 
+                    st.session_state.dense_units, 
+                    st.session_state.learning_rate
                 )
                 st.session_state.model.load_weights(MODEL_WEIGHTS_PATH)
                 y_train_pred = st.session_state.model.predict(X_train)
@@ -442,6 +440,7 @@ with col2:
 if st.session_state.feature_cols:
     with st.expander("🔄 Cross-Validation", expanded=False):
         if st.button("Run Cross-Validation"):
+            st.session_state.model_type = model_type  # Update model_type when running CV
             df = st.session_state.df.copy()
             feature_cols = st.session_state.feature_cols
             num_lags = st.session_state["num_lags"]
@@ -469,9 +468,9 @@ if st.session_state.feature_cols:
                 model = build_model(
                     (X_tr.shape[1], X_tr.shape[2]), 
                     st.session_state.model_type, 
-                    st.session_state.rnn_layers, 
+                    st.session_state.gru_layers, 
                     st.session_state.dense_layers, 
-                    st.session_state.rnn_units, 
+                    st.session_state.gru_units, 
                     st.session_state.dense_units, 
                     st.session_state.learning_rate
                 )
@@ -562,6 +561,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     new_var_types[var] = st.selectbox(f"{var} Type", ["Dynamic", "Static"], key=f"new_{var}_type_{new_data_file.name}")
                 
                 if st.button(f"🔍 Predict ({new_data_file.name})"):
+                    st.session_state.model_type = model_type  # Update model_type when predicting
                     if len(new_df) < (num_lags + 1 if any(new_var_types[var] == "Dynamic" for var in selected_inputs) else 1):
                         st.error(f"{new_data_file.name} has insufficient rows for {num_lags} lags.")
                         continue
@@ -596,9 +596,9 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         st.session_state.model = build_model(
                             (X_new.shape[1], X_new.shape[2]), 
                             st.session_state.model_type, 
-                            st.session_state.rnn_layers, 
+                            st.session_state.gru_layers, 
                             st.session_state.dense_layers, 
-                            st.session_state.rnn_units, 
+                            st.session_state.gru_units, 
                             st.session_state.dense_units, 
                             st.session_state.learning_rate
                         )
