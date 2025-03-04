@@ -14,22 +14,56 @@ from tensorflow.keras.utils import plot_model
 import plotly.graph_objects as go
 
 # -------------------- Model Parameters --------------------
-DEFAULT_RNN_UNITS = 64  # Changed from GRU_UNITS to RNN_UNITS
+DEFAULT_RNN_UNITS = 64
 DEFAULT_DENSE_UNITS = 32
 DEFAULT_LEARNING_RATE = 0.001
 DEFAULT_EPOCHS = 50
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_TRAIN_SPLIT = 80
 DEFAULT_NUM_LAGS = 3
-MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "rnn_model_weights.weights.h5")  # Updated to rnn_model_weights
-MODEL_FULL_PATH = os.path.join(tempfile.gettempdir(), "rnn_model.h5")  # Updated to rnn_model
-MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "rnn_model_plot.png")  # Updated to rnn_model_plot
-DEFAULT_MODEL_SAVE_PATH = "rnn_model_saved.h5"  # Updated to rnn_model_saved
+MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "rnn_model_weights.weights.h5")
+MODEL_FULL_PATH = os.path.join(tempfile.gettempdir(), "rnn_model.h5")
+MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "rnn_model_plot.png")
+DEFAULT_MODEL_SAVE_PATH = "rnn_model_saved.h5"
 DEFAULT_TRAIN_CSV_PATH = "train_results.csv"
 DEFAULT_TEST_CSV_PATH = "test_results.csv"
 
 # -------------------- Metric Functions --------------------
-# (Unchanged metric functions: nse, kge, pbias, peak_flow_error, high_flow_bias, low_flow_bias, volume_error)
+# Define these functions BEFORE they are referenced in all_metrics_dict
+def nse(actual, predicted):
+    return 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - np.mean(actual)) ** 2))
+
+def kge(actual, predicted):
+    r = np.corrcoef(actual, predicted)[0, 1]
+    alpha = np.std(predicted) / np.std(actual)
+    beta = np.mean(predicted) / np.mean(actual)
+    return 1 - np.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
+
+def pbias(actual, predicted):
+    return 100 * (np.sum(predicted - actual) / np.sum(actual))
+
+def peak_flow_error(actual, predicted):
+    actual_peak = np.max(actual)
+    predicted_peak = np.max(predicted)
+    return (predicted_peak - actual_peak) / actual_peak * 100 if actual_peak != 0 else 0
+
+def high_flow_bias(actual, predicted, percentile=90):
+    threshold = np.percentile(actual, percentile)
+    high_actual = actual[actual >= threshold]
+    high_predicted = predicted[actual >= threshold]
+    return 100 * (np.mean(high_predicted) - np.mean(high_actual)) / np.mean(high_actual) if len(high_actual) > 0 else 0
+
+def low_flow_bias(actual, predicted, percentile=10):
+    threshold = np.percentile(actual, percentile)
+    low_actual = actual[actual <= threshold]
+    low_predicted = predicted[actual <= threshold]
+    return 100 * (np.mean(low_predicted) - np.mean(low_actual)) / np.mean(low_actual) if len(low_actual) > 0 else 0
+
+def volume_error(actual, predicted):
+    return 100 * (np.sum(predicted) - np.sum(actual)) / np.sum(actual)
+
+# -------------------- Metrics Dictionary --------------------
+# Now that the functions are defined, this dictionary can reference them
 all_metrics_dict = {
     "RMSE": lambda a, p: np.sqrt(mean_squared_error(a, p)),
     "MAE": lambda a, p: mean_absolute_error(a, p),
@@ -92,7 +126,45 @@ def suggest_hyperparams(X_train, y_train, model_type):
     return best_config
 
 # -------------------- Save/Load Functions --------------------
-# (Unchanged save_model_and_results and load_results functions)
+def save_model_and_results(model, train_df, test_df, model_path=DEFAULT_MODEL_SAVE_PATH, train_path=DEFAULT_TRAIN_CSV_PATH, test_path=DEFAULT_TEST_CSV_PATH):
+    if model is not None:
+        model.save(model_path)
+        st.success(f"Model saved to {os.path.abspath(model_path)}")
+        with open(model_path, "rb") as f:
+            st.download_button(
+                label="⬇️ Download Saved Model",
+                data=f.read(),
+                file_name=model_path,
+                mime="application/octet-stream",
+                key="download_model"
+            )
+    if train_df is not None:
+        train_df.to_csv(train_path, index=False)
+        st.success(f"Training results saved to {os.path.abspath(train_path)}")
+        with open(train_path, "rb") as f:
+            st.download_button(
+                label="⬇️ Download Saved Train Results",
+                data=f.read(),
+                file_name=train_path,
+                mime="text/csv",
+                key="download_train_results"
+            )
+    if test_df is not None:
+        test_df.to_csv(test_path, index=False)
+        st.success(f"Testing results saved to {os.path.abspath(test_path)}")
+        with open(test_path, "rb") as f:
+            st.download_button(
+                label="⬇️ Download Saved Test Results",
+                data=f.read(),
+                file_name=test_path,
+                mime="text/csv",
+                key="download_test_results"
+            )
+
+def load_results(train_path=DEFAULT_TRAIN_CSV_PATH, test_path=DEFAULT_TEST_CSV_PATH):
+    train_df = pd.read_csv(train_path) if os.path.exists(train_path) else None
+    test_df = pd.read_csv(test_path) if os.path.exists(test_path) else None
+    return train_df, test_df
 
 # -------------------- Styling and Streamlit UI --------------------
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
@@ -194,7 +266,6 @@ with col1:
 with col2:
     st.subheader("⚙️ Model Configuration", divider="blue")
     
-    # Model Type Selection
     model_type = st.selectbox("Model Type", ["GRU", "LSTM"], index=0, key="model_type", help="Choose between GRU or LSTM architecture.")
     st.session_state.model_type = model_type
     
