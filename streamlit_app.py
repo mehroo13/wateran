@@ -139,7 +139,7 @@ st.markdown("**Simple, Fast, and Accurate Predictions Powered by GRU Neural Netw
 for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot', 'scaler', 'input_vars', 'output_var', 
             'new_predictions_df', 'new_fig', 'gru_layers', 'dense_layers', 'gru_units', 'dense_units', 'learning_rate', 
             'feature_cols', 'new_data_file', 'selected_inputs', 'new_date_col', 'selected_metrics', 'var_types', 
-            'new_var_types', 'num_lags', 'date_col', 'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test']:
+            'new_var_types', 'num_lags', 'date_col', 'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model']:
     if key not in st.session_state:
         st.session_state[key] = None if key != 'num_lags' else DEFAULT_NUM_LAGS
 
@@ -235,7 +235,7 @@ with col2:
     # Load Saved Model
     uploaded_model = st.file_uploader("Load Saved Model", type=["h5"], help="Upload a previously saved GRU model.")
     if uploaded_model:
-        model = tf.keras.models.load_model(uploaded_model)
+        st.session_state.model = tf.keras.models.load_model(uploaded_model)
         st.success("Model loaded successfully!")
     
     # Training Parameters
@@ -309,15 +309,15 @@ with col2:
                 st.session_state.X_test = X_test
                 st.session_state.y_test = y_test
 
-                model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
+                st.session_state.model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
                 early_stopping = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=10, restore_best_weights=True)
                 lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.5, patience=5)
                 with st.spinner("Training in progress..."):
                     progress_placeholder = st.empty()
                     callback = StreamlitProgressCallback(epochs, progress_placeholder)
-                    model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, callbacks=[callback, early_stopping, lr_scheduler])
-                    model.save_weights(MODEL_WEIGHTS_PATH)
-                    model.save(MODEL_FULL_PATH)
+                    st.session_state.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, callbacks=[callback, early_stopping, lr_scheduler])
+                    st.session_state.model.save_weights(MODEL_WEIGHTS_PATH)
+                    st.session_state.model.save(MODEL_FULL_PATH)
                 st.success("Model trained and saved successfully!")
         
         with col_btn2:
@@ -358,10 +358,10 @@ with col2:
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
-                model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
-                model.load_weights(MODEL_WEIGHTS_PATH)
-                y_train_pred = model.predict(X_train)
-                y_test_pred = model.predict(X_test)
+                st.session_state.model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
+                st.session_state.model.load_weights(MODEL_WEIGHTS_PATH)
+                y_train_pred = st.session_state.model.predict(X_train)
+                y_test_pred = st.session_state.model.predict(X_test)
                 y_train_pred = scaler.inverse_transform(np.hstack([y_train_pred, X_train[:, 0, :]]))[:, 0]
                 y_test_pred = scaler.inverse_transform(np.hstack([y_test_pred, X_test[:, 0, :]]))[:, 0]
                 y_train_actual = scaler.inverse_transform(np.hstack([y_train.reshape(-1, 1), X_train[:, 0, :]]))[:, 0]
@@ -484,8 +484,11 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
             st.download_button("⬇️ Test Data CSV", test_csv, "test_predictions.csv", "text/csv", key="test_dl")
         
         if st.button("🗺️ Show Model Architecture"):
-            plot_model(model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
-            st.image(MODEL_PLOT_PATH, caption="Model Architecture")
+            if st.session_state.model is None:
+                st.error("No model available. Please train, test, or load a model first.")
+            else:
+                plot_model(st.session_state.model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
+                st.image(MODEL_PLOT_PATH, caption="Model Architecture")
 
 # New Data Prediction Section
 if os.path.exists(MODEL_WEIGHTS_PATH):
@@ -552,9 +555,10 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     X_new = new_scaled[:, :-1]
                     X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
                     
-                    model = build_gru_model((X_new.shape[1], X_new.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
-                    model.load_weights(MODEL_WEIGHTS_PATH)
-                    y_new_pred = model.predict(X_new)
+                    if st.session_state.model is None:
+                        st.session_state.model = build_gru_model((X_new.shape[1], X_new.shape[2]), st.session_state.gru_layers, st.session_state.dense_layers, st.session_state.gru_units, st.session_state.dense_units, st.session_state.learning_rate)
+                        st.session_state.model.load_weights(MODEL_WEIGHTS_PATH)
+                    y_new_pred = st.session_state.model.predict(X_new)
                     y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, 0, :]]))[:, 0]
                     y_new_pred = np.clip(y_new_pred, 0, None)
                     
