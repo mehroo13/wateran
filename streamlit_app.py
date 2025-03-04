@@ -269,10 +269,18 @@ with col2:
     st.subheader("⚙️ Model Configuration", divider="blue")
     
     # Load Saved Model and Results
-    uploaded_model = st.file_uploader("Load Saved Model", type=["h5"], help="Upload a previously saved GRU model.")
-    if uploaded_model:
-        st.session_state.model = tf.keras.models.load_model(uploaded_model)
+uploaded_model = st.file_uploader("Load Saved Model", type=["h5"], help="Upload a previously saved GRU model.")
+if uploaded_model:
+    # Save the uploaded file to a temporary location
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp_file:
+        tmp_file.write(uploaded_model.read())
+        tmp_model_path = tmp_file.name
+    
+    # Load the model from the temporary file
+    try:
+        st.session_state.model = tf.keras.models.load_model(tmp_model_path)
         st.success("Model loaded successfully!")
+        
         # Optionally load train/test results if available
         train_df, test_df = load_results()
         if train_df is not None:
@@ -281,6 +289,9 @@ with col2:
         if test_df is not None:
             st.session_state.test_results_df = test_df
             st.success("Testing results loaded!")
+    finally:
+        # Clean up the temporary file
+        os.unlink(tmp_model_path)
     
     # Training Parameters
     st.markdown("**Training Parameters**")
