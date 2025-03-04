@@ -139,7 +139,7 @@ st.markdown("**Simple, Fast, and Accurate Predictions Powered by GRU Neural Netw
 for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot', 'scaler', 'input_vars', 'output_var', 
             'new_predictions_df', 'new_fig', 'gru_layers', 'dense_layers', 'gru_units', 'dense_units', 'learning_rate', 
             'feature_cols', 'new_data_file', 'selected_inputs', 'new_date_col', 'selected_metrics', 'var_types', 
-            'new_var_types', 'num_lags', 'date_col', 'df', 'cv_metrics']:
+            'new_var_types', 'num_lags', 'date_col', 'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test']:
     if key not in st.session_state:
         st.session_state[key] = None if key != 'num_lags' else DEFAULT_NUM_LAGS
 
@@ -304,6 +304,10 @@ with col2:
                 X_test, y_test = test_scaled[:, :-1], test_scaled[:, -1]
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
+                st.session_state.X_train = X_train
+                st.session_state.y_train = y_train
+                st.session_state.X_test = X_test
+                st.session_state.y_test = y_test
 
                 model = build_gru_model((X_train.shape[1], X_train.shape[2]), gru_layers, dense_layers, gru_units, dense_units, learning_rate)
                 early_stopping = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=10, restore_best_weights=True)
@@ -318,8 +322,11 @@ with col2:
         
         with col_btn2:
             if st.button("🤖 Suggest GRU Units"):
-                suggested_units = suggest_hyperparams(X_train, y_train)
-                st.info(f"Suggested GRU Units: {suggested_units}")
+                if "X_train" not in st.session_state or "y_train" not in st.session_state:
+                    st.error("Please train the model first to generate training data.")
+                else:
+                    suggested_units = suggest_hyperparams(st.session_state.X_train, st.session_state.y_train)
+                    st.info(f"Suggested GRU Units: {suggested_units}")
         
         with col_btn3:
             if st.button("🔍 Test Model"):
@@ -457,7 +464,16 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
             st.markdown("**📈 Prediction Plot**")
             st.plotly_chart(st.session_state.fig, use_container_width=True)
             buf = BytesIO()
-            st.session_state.fig.write_image(buf, format="png")
+            try:
+                st.session_state.fig.write_image(buf, format="png")
+            except ValueError:
+                fig, ax = plt.subplots()
+                ax.plot(st.session_state.train_results_df["Date"], st.session_state.train_results_df[f"Actual_{st.session_state.output_var}"], label="Train Actual")
+                ax.plot(st.session_state.train_results_df["Date"], st.session_state.train_results_df[f"Predicted_{st.session_state.output_var}"], label="Train Predicted", linestyle="--")
+                ax.plot(st.session_state.test_results_df["Date"], st.session_state.test_results_df[f"Actual_{st.session_state.output_var}"], label="Test Actual")
+                ax.plot(st.session_state.test_results_df["Date"], st.session_state.test_results_df[f"Predicted_{st.session_state.output_var}"], label="Test Predicted", linestyle="--")
+                ax.legend()
+                fig.savefig(buf, format="png", bbox_inches="tight")
             st.download_button("⬇️ Download Plot", buf.getvalue(), "prediction_plot.png", "image/png", key="plot_dl")
         
         if st.session_state.train_results_df is not None:
@@ -554,7 +570,13 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     fig.update_layout(title=f"New Predictions: {output_var} ({new_data_file.name})", xaxis_title="Date", yaxis_title=output_var)
                     st.plotly_chart(fig, use_container_width=True)
                     buf = BytesIO()
-                    fig.write_image(buf, format="png")
+                    try:
+                        fig.write_image(buf, format="png")
+                    except ValueError:
+                        fig_alt, ax = plt.subplots()
+                        ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted")
+                        ax.legend()
+                        fig_alt.savefig(buf, format="png", bbox_inches="tight")
                     st.download_button(f"⬇️ Download Plot ({new_data_file.name})", buf.getvalue(), f"new_prediction_{new_data_file.name}.png", "image/png")
                     new_csv = new_predictions_df.to_csv(index=False)
                     st.download_button(f"⬇️ Download CSV ({new_data_file.name})", new_csv, f"new_predictions_{new_data_file.name}.csv", "text/csv")
