@@ -58,6 +58,20 @@ def low_flow_bias(actual, predicted, percentile=10):
 def volume_error(actual, predicted):
     return 100 * (np.sum(predicted) - np.sum(actual)) / np.sum(actual)
 
+# Global Metrics Dictionary
+all_metrics_dict = {
+    "RMSE": lambda a, p: np.sqrt(mean_squared_error(a, p)),
+    "MAE": lambda a, p: mean_absolute_error(a, p),
+    "R²": lambda a, p: r2_score(a, p),
+    "NSE": nse,
+    "KGE": kge,
+    "PBIAS": pbias,
+    "Peak Flow Error": peak_flow_error,
+    "High Flow Bias": high_flow_bias,
+    "Low Flow Bias": low_flow_bias,
+    "Volume Error": volume_error
+}
+
 # -------------------- Custom Callbacks --------------------
 class StreamlitProgressCallback(tf.keras.callbacks.Callback):
     def __init__(self, total_epochs, progress_placeholder):
@@ -368,18 +382,6 @@ with col2:
                 y_test_actual = scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :]]))[:, 0]
                 y_train_pred, y_test_pred = np.clip(y_train_pred, 0, None), np.clip(y_test_pred, 0, None)
 
-                all_metrics_dict = {
-                    "RMSE": lambda a, p: np.sqrt(mean_squared_error(a, p)),
-                    "MAE": lambda a, p: mean_absolute_error(a, p),
-                    "R²": lambda a, p: r2_score(a, p),
-                    "NSE": nse,
-                    "KGE": kge,
-                    "PBIAS": pbias,
-                    "Peak Flow Error": peak_flow_error,
-                    "High Flow Bias": high_flow_bias,
-                    "Low Flow Bias": low_flow_bias,
-                    "Volume Error": volume_error
-                }
                 metrics = {metric: {
                     "Training": all_metrics_dict[metric](y_train_actual, y_train_pred),
                     "Testing": all_metrics_dict[metric](y_test_actual, y_test_pred)
