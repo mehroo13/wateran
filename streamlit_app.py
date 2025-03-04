@@ -123,12 +123,11 @@ def save_model_and_results(model, train_df, test_df):
     test_buffer = None
     
     if model is not None:
-        # Save model to a temporary file first, then read into buffer
         with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp_file:
             model.save(tmp_file.name)
             with open(tmp_file.name, 'rb') as f:
                 model_buffer = BytesIO(f.read())
-        os.unlink(tmp_file.name)  # Clean up temporary file
+        os.unlink(tmp_file.name)
     
     if train_df is not None:
         train_buffer = BytesIO()
@@ -304,6 +303,39 @@ with col2:
             if test_df is not None:
                 st.session_state.test_results_df = test_df
                 st.success("Testing results loaded!")
+            
+            # Update results visualization after loading
+            if st.session_state.train_results_df is not None and st.session_state.test_results_df is not None:
+                # Ensure column names match expected format
+                output_var = st.session_state.output_var or "Unknown"
+                train_actual_col = f"Actual_{output_var}"
+                train_pred_col = f"Predicted_{output_var}"
+                test_actual_col = f"Actual_{output_var}"
+                test_pred_col = f"Predicted_{output_var}"
+
+                if (train_actual_col in train_df.columns and train_pred_col in train_df.columns and
+                    test_actual_col in test_df.columns and test_pred_col in test_df.columns):
+                    # Recalculate metrics
+                    selected_metrics = st.session_state.selected_metrics or list(all_metrics_dict.keys())
+                    metrics = {
+                        metric: {
+                            "Training": all_metrics_dict[metric](train_df[train_actual_col], train_df[train_pred_col]),
+                            "Testing": all_metrics_dict[metric](test_df[test_actual_col], test_df[test_pred_col])
+                        } for metric in selected_metrics
+                    }
+                    st.session_state.metrics = metrics
+
+                    # Generate plot
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=train_df["Date"], y=train_df[train_actual_col], name="Train Actual", line=dict(color="#1f77b4")))
+                    fig.add_trace(go.Scatter(x=train_df["Date"], y=train_df[train_pred_col], name="Train Predicted", line=dict(color="#ff7f0e", dash="dash")))
+                    fig.add_trace(go.Scatter(x=test_df["Date"], y=test_df[test_actual_col], name="Test Actual", line=dict(color="#2ca02c")))
+                    fig.add_trace(go.Scatter(x=test_df["Date"], y=test_df[test_pred_col], name="Test Predicted", line=dict(color="#d62728", dash="dash")))
+                    fig.update_layout/title=f"Training and Testing: {output_var}", xaxis_title="Date", yaxis_title=output_var)
+                    st.session_state.fig = fig
+                else:
+                    st.warning("Loaded results CSV files do not contain expected columns (e.g., 'Actual_<var>', 'Predicted_<var>'). Metrics and plot generation skipped.")
+        
         except Exception as e:
             st.error(f"Failed to load model: {str(e)}")
             st.write("Please ensure the uploaded file is a valid Keras .h5 model saved with a compatible TensorFlow version.")
