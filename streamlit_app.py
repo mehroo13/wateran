@@ -24,6 +24,9 @@ DEFAULT_NUM_LAGS = 3
 MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weights.h5")
 MODEL_FULL_PATH = os.path.join(tempfile.gettempdir(), "gru_model.h5")
 MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "gru_model_plot.png")
+DEFAULT_MODEL_SAVE_PATH = "gru_model_saved.h5"
+DEFAULT_TRAIN_CSV_PATH = "train_results.csv"
+DEFAULT_TEST_CSV_PATH = "test_results.csv"
 
 # -------------------- Metric Functions --------------------
 def nse(actual, predicted):
@@ -114,6 +117,25 @@ def suggest_hyperparams(X_train, y_train):
             best_loss = loss
             best_config = units
     return best_config
+
+# -------------------- Save/Load Functions --------------------
+def save_model_and_results(model, train_df, test_df, model_path=DEFAULT_MODEL_SAVE_PATH, train_path=DEFAULT_TRAIN_CSV_PATH, test_path=DEFAULT_TEST_CSV_PATH):
+    """Save the model and train/test results to disk."""
+    if model is not None:
+        model.save(model_path)
+        st.success(f"Model saved to {model_path}")
+    if train_df is not None:
+        train_df.to_csv(train_path, index=False)
+        st.success(f"Training results saved to {train_path}")
+    if test_df is not None:
+        test_df.to_csv(test_path, index=False)
+        st.success(f"Testing results saved to {test_path}")
+
+def load_results(train_path=DEFAULT_TRAIN_CSV_PATH, test_path=DEFAULT_TEST_CSV_PATH):
+    """Load train/test results from CSV files."""
+    train_df = pd.read_csv(train_path) if os.path.exists(train_path) else None
+    test_df = pd.read_csv(test_path) if os.path.exists(test_path) else None
+    return train_df, test_df
 
 # -------------------- Styling and Streamlit UI --------------------
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
@@ -246,11 +268,19 @@ with col1:
 with col2:
     st.subheader("⚙️ Model Configuration", divider="blue")
     
-    # Load Saved Model
+    # Load Saved Model and Results
     uploaded_model = st.file_uploader("Load Saved Model", type=["h5"], help="Upload a previously saved GRU model.")
     if uploaded_model:
         st.session_state.model = tf.keras.models.load_model(uploaded_model)
         st.success("Model loaded successfully!")
+        # Optionally load train/test results if available
+        train_df, test_df = load_results()
+        if train_df is not None:
+            st.session_state.train_results_df = train_df
+            st.success("Training results loaded!")
+        if test_df is not None:
+            st.session_state.test_results_df = test_df
+            st.success("Testing results loaded!")
     
     # Training Parameters
     st.markdown("**Training Parameters**")
@@ -491,6 +521,13 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
             else:
                 plot_model(st.session_state.model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
                 st.image(MODEL_PLOT_PATH, caption="Model Architecture")
+        
+        # Save Model and Results Button
+        if st.button("💾 Save Model and Results"):
+            if st.session_state.model is None:
+                st.error("No model to save. Please train or test a model first.")
+            else:
+                save_model_and_results(st.session_state.model, st.session_state.train_results_df, st.session_state.test_results_df)
 
 # New Data Prediction Section
 if os.path.exists(MODEL_WEIGHTS_PATH):
