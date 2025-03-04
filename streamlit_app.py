@@ -331,7 +331,7 @@ with col2:
                     fig.add_trace(go.Scatter(x=train_df["Date"], y=train_df[train_pred_col], name="Train Predicted", line=dict(color="#ff7f0e", dash="dash")))
                     fig.add_trace(go.Scatter(x=test_df["Date"], y=test_df[test_actual_col], name="Test Actual", line=dict(color="#2ca02c")))
                     fig.add_trace(go.Scatter(x=test_df["Date"], y=test_df[test_pred_col], name="Test Predicted", line=dict(color="#d62728", dash="dash")))
-                    fig.update_layout/title=f"Training and Testing: {output_var}", xaxis_title="Date", yaxis_title=output_var)
+                    fig.update_layout(title=f"Training and Testing: {output_var}", xaxis_title="Date", yaxis_title=output_var)
                     st.session_state.fig = fig
                 else:
                     st.warning("Loaded results CSV files do not contain expected columns (e.g., 'Actual_<var>', 'Predicted_<var>'). Metrics and plot generation skipped.")
