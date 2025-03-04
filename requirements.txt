@@ -9,3 +9,4 @@ pydot
 openpyxl
 plotly
 seaborn
+kaleido
