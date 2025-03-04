@@ -24,9 +24,6 @@ DEFAULT_NUM_LAGS = 3
 MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weights.h5")
 MODEL_FULL_PATH = os.path.join(tempfile.gettempdir(), "gru_model.h5")
 MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "gru_model_plot.png")
-DEFAULT_MODEL_SAVE_PATH = "gru_model_saved.h5"
-DEFAULT_TRAIN_CSV_PATH = "train_results.csv"
-DEFAULT_TEST_CSV_PATH = "test_results.csv"
 
 # -------------------- Metric Functions --------------------
 def nse(actual, predicted):
@@ -119,19 +116,30 @@ def suggest_hyperparams(X_train, y_train):
     return best_config
 
 # -------------------- Save/Load Functions --------------------
-def save_model_and_results(model, train_df, test_df, model_path=DEFAULT_MODEL_SAVE_PATH, train_path=DEFAULT_TRAIN_CSV_PATH, test_path=DEFAULT_TEST_CSV_PATH):
-    """Save the model and train/test results to disk."""
+def save_model_and_results(model, train_df, test_df):
+    """Generate downloadable buffers for the model and train/test results."""
+    model_buffer = None
+    train_buffer = None
+    test_buffer = None
+    
     if model is not None:
-        model.save(model_path)
-        st.success(f"Model saved to {model_path}")
+        model_buffer = BytesIO()
+        model.save(model_buffer)  # Save model to BytesIO buffer
+        model_buffer.seek(0)
+    
     if train_df is not None:
-        train_df.to_csv(train_path, index=False)
-        st.success(f"Training results saved to {train_path}")
+        train_buffer = BytesIO()
+        train_df.to_csv(train_buffer, index=False)
+        train_buffer.seek(0)
+    
     if test_df is not None:
-        test_df.to_csv(test_path, index=False)
-        st.success(f"Testing results saved to {test_path}")
+        test_buffer = BytesIO()
+        test_df.to_csv(test_buffer, index=False)
+        test_buffer.seek(0)
+    
+    return model_buffer, train_buffer, test_buffer
 
-def load_results(train_path=DEFAULT_TRAIN_CSV_PATH, test_path=DEFAULT_TEST_CSV_PATH):
+def load_results(train_path="train_results.csv", test_path="test_results.csv"):
     """Load train/test results from CSV files."""
     train_df = pd.read_csv(train_path) if os.path.exists(train_path) else None
     test_df = pd.read_csv(test_path) if os.path.exists(test_path) else None
@@ -271,16 +279,13 @@ with col2:
     # Load Saved Model and Results
     uploaded_model = st.file_uploader("Load Saved Model", type=["h5"], help="Upload a previously saved GRU model.")
     if uploaded_model:
-        # Save the uploaded file to a temporary location
         with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp_file:
             tmp_file.write(uploaded_model.read())
             tmp_model_path = tmp_file.name
         
-        # Load the model with custom_objects for safety
         try:
             custom_objects = {
-                'mse': tf.keras.losses.MeanSquaredError(),  # Explicitly map 'mse' to the class
-                # Add custom metrics or layers here if used in your model (e.g., 'nse': nse)
+                'mse': tf.keras.losses.MeanSquaredError(),
             }
             st.session_state.model = tf.keras.models.load_model(
                 tmp_model_path,
@@ -289,7 +294,6 @@ with col2:
             )
             st.success("Model loaded successfully!")
             
-            # Optionally load train/test results if available
             train_df, test_df = load_results()
             if train_df is not None:
                 st.session_state.train_results_df = train_df
@@ -301,7 +305,6 @@ with col2:
             st.error(f"Failed to load model: {str(e)}")
             st.write("Please ensure the uploaded file is a valid Keras .h5 model saved with a compatible TensorFlow version.")
         finally:
-            # Clean up the temporary file
             os.unlink(tmp_model_path)
     
     # Training Parameters
@@ -549,7 +552,37 @@ if any(x is not None for x in [st.session_state.metrics, st.session_state.fig, s
             if st.session_state.model is None:
                 st.error("No model to save. Please train or test a model first.")
             else:
-                save_model_and_results(st.session_state.model, st.session_state.train_results_df, st.session_state.test_results_df)
+                model_buffer, train_buffer, test_buffer = save_model_and_results(
+                    st.session_state.model, 
+                    st.session_state.train_results_df, 
+                    st.session_state.test_results_df
+                )
+                
+                if model_buffer:
+                    st.download_button(
+                        label="⬇️ Download Model",
+                        data=model_buffer,
+                        file_name="gru_model_saved.h5",
+                        mime="application/octet-stream",
+                        key="model_dl"
+                    )
+                if train_buffer:
+                    st.download_button(
+                        label="⬇️ Download Training Results",
+                        data=train_buffer,
+                        file_name="train_results.csv",
+                        mime="text/csv",
+                        key="train_results_dl"
+                    )
+                if test_buffer:
+                    st.download_button(
+                        label="⬇️ Download Testing Results",
+                        data=test_buffer,
+                        file_name="test_results.csv",
+                        mime="text/csv",
+                        key="test_results_dl"
+                    )
+                st.success("Model and results prepared for download!")
 
 # New Data Prediction Section
 if os.path.exists(MODEL_WEIGHTS_PATH):
