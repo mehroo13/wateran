@@ -271,16 +271,38 @@ with col2:
     # Load Saved Model and Results
     uploaded_model = st.file_uploader("Load Saved Model", type=["h5"], help="Upload a previously saved GRU model.")
     if uploaded_model:
-        st.session_state.model = tf.keras.models.load_model(uploaded_model)
-        st.success("Model loaded successfully!")
-        # Optionally load train/test results if available
-        train_df, test_df = load_results()
-        if train_df is not None:
-            st.session_state.train_results_df = train_df
-            st.success("Training results loaded!")
-        if test_df is not None:
-            st.session_state.test_results_df = test_df
-            st.success("Testing results loaded!")
+        # Save the uploaded file to a temporary location
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp_file:
+            tmp_file.write(uploaded_model.read())
+            tmp_model_path = tmp_file.name
+        
+        # Load the model with custom_objects for safety
+        try:
+            custom_objects = {
+                'mse': tf.keras.losses.MeanSquaredError(),  # Explicitly map 'mse' to the class
+                # Add custom metrics or layers here if used in your model (e.g., 'nse': nse)
+            }
+            st.session_state.model = tf.keras.models.load_model(
+                tmp_model_path,
+                custom_objects=custom_objects,
+                compile=True
+            )
+            st.success("Model loaded successfully!")
+            
+            # Optionally load train/test results if available
+            train_df, test_df = load_results()
+            if train_df is not None:
+                st.session_state.train_results_df = train_df
+                st.success("Training results loaded!")
+            if test_df is not None:
+                st.session_state.test_results_df = test_df
+                st.success("Testing results loaded!")
+        except Exception as e:
+            st.error(f"Failed to load model: {str(e)}")
+            st.write("Please ensure the uploaded file is a valid Keras .h5 model saved with a compatible TensorFlow version.")
+        finally:
+            # Clean up the temporary file
+            os.unlink(tmp_model_path)
     
     # Training Parameters
     st.markdown("**Training Parameters**")
