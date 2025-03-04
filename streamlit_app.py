@@ -123,13 +123,13 @@ def save_model_and_results(model, train_df, test_df, model_path=DEFAULT_MODEL_SA
     """Save the model and train/test results to disk."""
     if model is not None:
         model.save(model_path)
-        st.success(f"Model saved to {model_path}")
+        st.success(f"Model saved to {os.path.abspath(model_path)}")
     if train_df is not None:
         train_df.to_csv(train_path, index=False)
-        st.success(f"Training results saved to {train_path}")
+        st.success(f"Training results saved to {os.path.abspath(train_path)}")
     if test_df is not None:
         test_df.to_csv(test_path, index=False)
-        st.success(f"Testing results saved to {test_path}")
+        st.success(f"Testing results saved to {os.path.abspath(test_path)}")
 
 def load_results(train_path=DEFAULT_TRAIN_CSV_PATH, test_path=DEFAULT_TEST_CSV_PATH):
     """Load train/test results from CSV files."""
@@ -273,7 +273,6 @@ with col2:
     if uploaded_model:
         st.session_state.model = tf.keras.models.load_model(uploaded_model)
         st.success("Model loaded successfully!")
-        # Optionally load train/test results if available
         train_df, test_df = load_results()
         if train_df is not None:
             st.session_state.train_results_df = train_df
@@ -289,8 +288,10 @@ with col2:
     train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT, help="Percentage for training vs. testing.") / 100
     st.number_input("Number of Lags", min_value=1, max_value=10, value=DEFAULT_NUM_LAGS if st.session_state.num_lags is None else st.session_state.num_lags, step=1, key="num_lags", help="Past time steps to include.")
     
-    # Model Architecture
-    with st.expander("Model Architecture", expanded=False):
+    # Model Architecture (Simplified Expander)
+    st.markdown("**Model Architecture**")
+    expander = st.expander("Customize Architecture", expanded=False)
+    with expander:
         gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=1, step=1, help="Number of GRU layers for time modeling.")
         gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}") for i in range(gru_layers)]
         dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=1, step=1, help="Number of dense layers for output.")
@@ -510,10 +511,10 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
         
         if st.session_state.train_results_df is not None:
             train_csv = st.session_state.train_results_df.to_csv(index=False)
-            st.download_button("⬇️ Train Data CSV", train_csv, "train_predictions.csv", "text/csv", key="train_dl")
+            st.download_button("⬇️ Download Train Data CSV", train_csv, "train_predictions.csv", "text/csv", key="train_dl")
         if st.session_state.test_results_df is not None:
             test_csv = st.session_state.test_results_df.to_csv(index=False)
-            st.download_button("⬇️ Test Data CSV", test_csv, "test_predictions.csv", "text/csv", key="test_dl")
+            st.download_button("⬇️ Download Test Data CSV", test_csv, "test_predictions.csv", "text/csv", key="test_dl")
         
         if st.button("🗺️ Show Model Architecture"):
             if st.session_state.model is None:
@@ -522,12 +523,40 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
                 plot_model(st.session_state.model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
                 st.image(MODEL_PLOT_PATH, caption="Model Architecture")
         
-        # Save Model and Results Button
+        # Save Model and Results Button with Downloads
         if st.button("💾 Save Model and Results"):
             if st.session_state.model is None:
                 st.error("No model to save. Please train or test a model first.")
             else:
                 save_model_and_results(st.session_state.model, st.session_state.train_results_df, st.session_state.test_results_df)
+                # Download buttons for saved files
+                if os.path.exists(DEFAULT_MODEL_SAVE_PATH):
+                    with open(DEFAULT_MODEL_SAVE_PATH, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Download Saved Model",
+                            data=f.read(),
+                            file_name=DEFAULT_MODEL_SAVE_PATH,
+                            mime="application/octet-stream",
+                            key="download_model"
+                        )
+                if os.path.exists(DEFAULT_TRAIN_CSV_PATH):
+                    with open(DEFAULT_TRAIN_CSV_PATH, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Download Saved Train Results",
+                            data=f.read(),
+                            file_name=DEFAULT_TRAIN_CSV_PATH,
+                            mime="text/csv",
+                            key="download_train_results"
+                        )
+                if os.path.exists(DEFAULT_TEST_CSV_PATH):
+                    with open(DEFAULT_TEST_CSV_PATH, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Download Saved Test Results",
+                            data=f.read(),
+                            file_name=DEFAULT_TEST_CSV_PATH,
+                            mime="text/csv",
+                            key="download_test_results"
+                        )
 
 # New Data Prediction Section
 if os.path.exists(MODEL_WEIGHTS_PATH):
