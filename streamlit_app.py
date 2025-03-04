@@ -123,13 +123,37 @@ def save_model_and_results(model, train_df, test_df, model_path=DEFAULT_MODEL_SA
     """Save the model and train/test results to disk."""
     if model is not None:
         model.save(model_path)
-        st.success(f"Model saved to {model_path}")
+        st.success(f"Model saved to {os.path.abspath(model_path)}")
+        with open(model_path, "rb") as f:
+            st.download_button(
+                label="⬇️ Download Saved Model",
+                data=f.read(),
+                file_name=model_path,
+                mime="application/octet-stream",
+                key="download_model"
+            )
     if train_df is not None:
         train_df.to_csv(train_path, index=False)
-        st.success(f"Training results saved to {train_path}")
+        st.success(f"Training results saved to {os.path.abspath(train_path)}")
+        with open(train_path, "rb") as f:
+            st.download_button(
+                label="⬇️ Download Saved Train Results",
+                data=f.read(),
+                file_name=train_path,
+                mime="text/csv",
+                key="download_train_results"
+            )
     if test_df is not None:
         test_df.to_csv(test_path, index=False)
-        st.success(f"Testing results saved to {test_path}")
+        st.success(f"Testing results saved to {os.path.abspath(test_path)}")
+        with open(test_path, "rb") as f:
+            st.download_button(
+                label="⬇️ Download Saved Test Results",
+                data=f.read(),
+                file_name=test_path,
+                mime="text/csv",
+                key="download_test_results"
+            )
 
 def load_results(train_path=DEFAULT_TRAIN_CSV_PATH, test_path=DEFAULT_TEST_CSV_PATH):
     """Load train/test results from CSV files."""
@@ -267,42 +291,6 @@ with col1:
 # Right Column: Model Settings and Actions
 with col2:
     st.subheader("⚙️ Model Configuration", divider="blue")
-    
-    # Load Saved Model and Results
-    uploaded_model = st.file_uploader("Load Saved Model", type=["h5"], help="Upload a previously saved GRU model.")
-    if uploaded_model:
-        # Save the uploaded file to a temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp_file:
-            tmp_file.write(uploaded_model.read())
-            tmp_model_path = tmp_file.name
-        
-        # Load the model with custom_objects for safety
-        try:
-            custom_objects = {
-                'mse': tf.keras.losses.MeanSquaredError(),  # Explicitly map 'mse' to the class
-                # Add custom metrics or layers here if used in your model (e.g., 'nse': nse)
-            }
-            st.session_state.model = tf.keras.models.load_model(
-                tmp_model_path,
-                custom_objects=custom_objects,
-                compile=True
-            )
-            st.success("Model loaded successfully!")
-            
-            # Optionally load train/test results if available
-            train_df, test_df = load_results()
-            if train_df is not None:
-                st.session_state.train_results_df = train_df
-                st.success("Training results loaded!")
-            if test_df is not None:
-                st.session_state.test_results_df = test_df
-                st.success("Testing results loaded!")
-        except Exception as e:
-            st.error(f"Failed to load model: {str(e)}")
-            st.write("Please ensure the uploaded file is a valid Keras .h5 model saved with a compatible TensorFlow version.")
-        finally:
-            # Clean up the temporary file
-            os.unlink(tmp_model_path)
     
     # Training Parameters
     st.markdown("**Training Parameters**")
@@ -532,19 +520,19 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
         
         if st.session_state.train_results_df is not None:
             train_csv = st.session_state.train_results_df.to_csv(index=False)
-            st.download_button("⬇️ Train Data CSV", train_csv, "train_predictions.csv", "text/csv", key="train_dl")
+            st.download_button("⬇️ Download Train Data CSV", train_csv, "train_predictions.csv", "text/csv", key="train_dl")
         if st.session_state.test_results_df is not None:
             test_csv = st.session_state.test_results_df.to_csv(index=False)
-            st.download_button("⬇️ Test Data CSV", test_csv, "test_predictions.csv", "text/csv", key="test_dl")
+            st.download_button("⬇️ Download Test Data CSV", test_csv, "test_predictions.csv", "text/csv", key="test_dl")
         
         if st.button("🗺️ Show Model Architecture"):
             if st.session_state.model is None:
-                st.error("No model available. Please train, test, or load a model first.")
+                st.error("No model available. Please train or test a model first.")
             else:
                 plot_model(st.session_state.model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
                 st.image(MODEL_PLOT_PATH, caption="Model Architecture")
         
-        # Save Model and Results Button
+        # Save Model and Results Button with Downloads
         if st.button("💾 Save Model and Results"):
             if st.session_state.model is None:
                 st.error("No model to save. Please train or test a model first.")
@@ -639,7 +627,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         fig.write_image(buf, format="png")
                     except ValueError:
                         fig_alt, ax = plt.subplots()
-                        ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted")
+                        ax.plot(dates.values[-len(y_new_pred):], y=y_new_pred, label="Predicted")
                         ax.legend()
                         fig_alt.savefig(buf, format="png", bbox_inches="tight")
                     st.download_button(f"⬇️ Download Plot ({new_data_file.name})", buf.getvalue(), f"new_prediction_{new_data_file.name}.png", "image/png")
