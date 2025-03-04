@@ -123,9 +123,12 @@ def save_model_and_results(model, train_df, test_df):
     test_buffer = None
     
     if model is not None:
-        model_buffer = BytesIO()
-        model.save(model_buffer)  # Save model to BytesIO buffer
-        model_buffer.seek(0)
+        # Save model to a temporary file first, then read into buffer
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp_file:
+            model.save(tmp_file.name)
+            with open(tmp_file.name, 'rb') as f:
+                model_buffer = BytesIO(f.read())
+        os.unlink(tmp_file.name)  # Clean up temporary file
     
     if train_df is not None:
         train_buffer = BytesIO()
