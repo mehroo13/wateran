@@ -532,13 +532,6 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
                 plot_model(st.session_state.model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
                 st.image(MODEL_PLOT_PATH, caption="Model Architecture")
         
-        # Save Model and Results Button with Downloads
-        if st.button("💾 Save Model and Results"):
-            if st.session_state.model is None:
-                st.error("No model to save. Please train or test a model first.")
-            else:
-                save_model_and_results(st.session_state.model, st.session_state.train_results_df, st.session_state.test_results_df)
-
 # New Data Prediction Section
 if os.path.exists(MODEL_WEIGHTS_PATH):
     with st.expander("🔮 New Predictions", expanded=False):
