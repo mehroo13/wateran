@@ -24,6 +24,9 @@ DEFAULT_NUM_LAGS = 3
 MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "gru_model_weights.weights.h5")
 MODEL_FULL_PATH = os.path.join(tempfile.gettempdir(), "gru_model.h5")
 MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "gru_model_plot.png")
+DEFAULT_MODEL_SAVE_PATH = "gru_model_saved.h5"
+DEFAULT_TRAIN_CSV_PATH = "train_results.csv"
+DEFAULT_TEST_CSV_PATH = "test_results.csv"
 
 # -------------------- Metric Functions --------------------
 def nse(actual, predicted):
@@ -116,32 +119,43 @@ def suggest_hyperparams(X_train, y_train):
     return best_config
 
 # -------------------- Save/Load Functions --------------------
-def save_model_and_results(model, train_df, test_df):
-    """Generate downloadable buffers for the model and train/test results."""
-    model_buffer = None
-    train_buffer = None
-    test_buffer = None
-    
+def save_model_and_results(model, train_df, test_df, model_path=DEFAULT_MODEL_SAVE_PATH, train_path=DEFAULT_TRAIN_CSV_PATH, test_path=DEFAULT_TEST_CSV_PATH):
+    """Save the model and train/test results to disk."""
     if model is not None:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp_file:
-            model.save(tmp_file.name)
-            with open(tmp_file.name, 'rb') as f:
-                model_buffer = BytesIO(f.read())
-        os.unlink(tmp_file.name)
-    
+        model.save(model_path)
+        st.success(f"Model saved to {os.path.abspath(model_path)}")
+        with open(model_path, "rb") as f:
+            st.download_button(
+                label="⬇️ Download Saved Model",
+                data=f.read(),
+                file_name=model_path,
+                mime="application/octet-stream",
+                key="download_model"
+            )
     if train_df is not None:
-        train_buffer = BytesIO()
-        train_df.to_csv(train_buffer, index=False)
-        train_buffer.seek(0)
-    
+        train_df.to_csv(train_path, index=False)
+        st.success(f"Training results saved to {os.path.abspath(train_path)}")
+        with open(train_path, "rb") as f:
+            st.download_button(
+                label="⬇️ Download Saved Train Results",
+                data=f.read(),
+                file_name=train_path,
+                mime="text/csv",
+                key="download_train_results"
+            )
     if test_df is not None:
-        test_buffer = BytesIO()
-        test_df.to_csv(test_buffer, index=False)
-        test_buffer.seek(0)
-    
-    return model_buffer, train_buffer, test_buffer
+        test_df.to_csv(test_path, index=False)
+        st.success(f"Testing results saved to {os.path.abspath(test_path)}")
+        with open(test_path, "rb") as f:
+            st.download_button(
+                label="⬇️ Download Saved Test Results",
+                data=f.read(),
+                file_name=test_path,
+                mime="text/csv",
+                key="download_test_results"
+            )
 
-def load_results(train_path="train_results.csv", test_path="test_results.csv"):
+def load_results(train_path=DEFAULT_TRAIN_CSV_PATH, test_path=DEFAULT_TEST_CSV_PATH):
     """Load train/test results from CSV files."""
     train_df = pd.read_csv(train_path) if os.path.exists(train_path) else None
     test_df = pd.read_csv(test_path) if os.path.exists(test_path) else None
@@ -277,70 +291,6 @@ with col1:
 # Right Column: Model Settings and Actions
 with col2:
     st.subheader("⚙️ Model Configuration", divider="blue")
-    
-    # Load Saved Model and Results
-    uploaded_model = st.file_uploader("Load Saved Model", type=["h5"], help="Upload a previously saved GRU model.")
-    if uploaded_model:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp_file:
-            tmp_file.write(uploaded_model.read())
-            tmp_model_path = tmp_file.name
-        
-        try:
-            custom_objects = {
-                'mse': tf.keras.losses.MeanSquaredError(),
-            }
-            st.session_state.model = tf.keras.models.load_model(
-                tmp_model_path,
-                custom_objects=custom_objects,
-                compile=True
-            )
-            st.success("Model loaded successfully!")
-            
-            train_df, test_df = load_results()
-            if train_df is not None:
-                st.session_state.train_results_df = train_df
-                st.success("Training results loaded!")
-            if test_df is not None:
-                st.session_state.test_results_df = test_df
-                st.success("Testing results loaded!")
-            
-            # Update results visualization after loading
-            if st.session_state.train_results_df is not None and st.session_state.test_results_df is not None:
-                # Ensure column names match expected format
-                output_var = st.session_state.output_var or "Unknown"
-                train_actual_col = f"Actual_{output_var}"
-                train_pred_col = f"Predicted_{output_var}"
-                test_actual_col = f"Actual_{output_var}"
-                test_pred_col = f"Predicted_{output_var}"
-
-                if (train_actual_col in train_df.columns and train_pred_col in train_df.columns and
-                    test_actual_col in test_df.columns and test_pred_col in test_df.columns):
-                    # Recalculate metrics
-                    selected_metrics = st.session_state.selected_metrics or list(all_metrics_dict.keys())
-                    metrics = {
-                        metric: {
-                            "Training": all_metrics_dict[metric](train_df[train_actual_col], train_df[train_pred_col]),
-                            "Testing": all_metrics_dict[metric](test_df[test_actual_col], test_df[test_pred_col])
-                        } for metric in selected_metrics
-                    }
-                    st.session_state.metrics = metrics
-
-                    # Generate plot
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(x=train_df["Date"], y=train_df[train_actual_col], name="Train Actual", line=dict(color="#1f77b4")))
-                    fig.add_trace(go.Scatter(x=train_df["Date"], y=train_df[train_pred_col], name="Train Predicted", line=dict(color="#ff7f0e", dash="dash")))
-                    fig.add_trace(go.Scatter(x=test_df["Date"], y=test_df[test_actual_col], name="Test Actual", line=dict(color="#2ca02c")))
-                    fig.add_trace(go.Scatter(x=test_df["Date"], y=test_df[test_pred_col], name="Test Predicted", line=dict(color="#d62728", dash="dash")))
-                    fig.update_layout(title=f"Training and Testing: {output_var}", xaxis_title="Date", yaxis_title=output_var)
-                    st.session_state.fig = fig
-                else:
-                    st.warning("Loaded results CSV files do not contain expected columns (e.g., 'Actual_<var>', 'Predicted_<var>'). Metrics and plot generation skipped.")
-        
-        except Exception as e:
-            st.error(f"Failed to load model: {str(e)}")
-            st.write("Please ensure the uploaded file is a valid Keras .h5 model saved with a compatible TensorFlow version.")
-        finally:
-            os.unlink(tmp_model_path)
     
     # Training Parameters
     st.markdown("**Training Parameters**")
@@ -540,7 +490,7 @@ if st.session_state.feature_cols:
             st.write("Cross-Validation Results:", st.session_state.cv_metrics)
 
 # Results Section
-if any(x is not None for x in [st.session_state.metrics, st.session_state.fig, st.session_state.train_results_df, st.session_state.test_results_df]):
+if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_results_df, st.session_state.test_results_df]):
     with st.expander("📊 Results", expanded=True):
         st.subheader("Results Overview", divider="blue")
         if st.session_state.metrics:
@@ -570,54 +520,24 @@ if any(x is not None for x in [st.session_state.metrics, st.session_state.fig, s
         
         if st.session_state.train_results_df is not None:
             train_csv = st.session_state.train_results_df.to_csv(index=False)
-            st.download_button("⬇️ Train Data CSV", train_csv, "train_predictions.csv", "text/csv", key="train_dl")
+            st.download_button("⬇️ Download Train Data CSV", train_csv, "train_predictions.csv", "text/csv", key="train_dl")
         if st.session_state.test_results_df is not None:
             test_csv = st.session_state.test_results_df.to_csv(index=False)
-            st.download_button("⬇️ Test Data CSV", test_csv, "test_predictions.csv", "text/csv", key="test_dl")
+            st.download_button("⬇️ Download Test Data CSV", test_csv, "test_predictions.csv", "text/csv", key="test_dl")
         
         if st.button("🗺️ Show Model Architecture"):
             if st.session_state.model is None:
-                st.error("No model available. Please train, test, or load a model first.")
+                st.error("No model available. Please train or test a model first.")
             else:
                 plot_model(st.session_state.model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
                 st.image(MODEL_PLOT_PATH, caption="Model Architecture")
         
-        # Save Model and Results Button
+        # Save Model and Results Button with Downloads
         if st.button("💾 Save Model and Results"):
             if st.session_state.model is None:
                 st.error("No model to save. Please train or test a model first.")
             else:
-                model_buffer, train_buffer, test_buffer = save_model_and_results(
-                    st.session_state.model, 
-                    st.session_state.train_results_df, 
-                    st.session_state.test_results_df
-                )
-                
-                if model_buffer:
-                    st.download_button(
-                        label="⬇️ Download Model",
-                        data=model_buffer,
-                        file_name="gru_model_saved.h5",
-                        mime="application/octet-stream",
-                        key="model_dl"
-                    )
-                if train_buffer:
-                    st.download_button(
-                        label="⬇️ Download Training Results",
-                        data=train_buffer,
-                        file_name="train_results.csv",
-                        mime="text/csv",
-                        key="train_results_dl"
-                    )
-                if test_buffer:
-                    st.download_button(
-                        label="⬇️ Download Testing Results",
-                        data=test_buffer,
-                        file_name="test_results.csv",
-                        mime="text/csv",
-                        key="test_results_dl"
-                    )
-                st.success("Model and results prepared for download!")
+                save_model_and_results(st.session_state.model, st.session_state.train_results_df, st.session_state.test_results_df)
 
 # New Data Prediction Section
 if os.path.exists(MODEL_WEIGHTS_PATH):
@@ -707,7 +627,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         fig.write_image(buf, format="png")
                     except ValueError:
                         fig_alt, ax = plt.subplots()
-                        ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted")
+                        ax.plot(dates.values[-len(y_new_pred):], y=y_new_pred, label="Predicted")
                         ax.legend()
                         fig_alt.savefig(buf, format="png", bbox_inches="tight")
                     st.download_button(f"⬇️ Download Plot ({new_data_file.name})", buf.getvalue(), f"new_prediction_{new_data_file.name}.png", "image/png")
