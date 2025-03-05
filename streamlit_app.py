@@ -135,6 +135,8 @@ for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot
             st.session_state[key] = [DEFAULT_DENSE_UNITS]
         elif key == 'learning_rate':
             st.session_state[key] = DEFAULT_LEARNING_RATE
+        elif key == 'hybrid_models':
+            st.session_state[key] = ["GRU"]  # Default value for hybrid_models
         else:
             st.session_state[key] = None
 
@@ -229,7 +231,9 @@ with col2:
     
     with st.expander("Model Architecture", expanded=False):
         if model_type == "Hybrid":
-            st.session_state.hybrid_models = st.multiselect("Select Hybrid Models", ["GRU", "LSTM", "RNN", "PINN"], default=["GRU"], key="hybrid_models")
+            hybrid_models = st.multiselect("Select Hybrid Models", ["GRU", "LSTM", "RNN", "PINN"], default=st.session_state.hybrid_models, key="hybrid_models")
+            if hybrid_models != st.session_state.hybrid_models:
+                st.session_state.hybrid_models = hybrid_models
         elif model_type == "GRU":
             gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=st.session_state.gru_layers, step=1, key="gru_layers")
             if gru_layers != st.session_state.gru_layers:
