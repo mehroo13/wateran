@@ -218,7 +218,7 @@ with col1:
 with col2:
     st.subheader("⚙️ Model Configuration", divider="blue")
     
-    model_type = st.selectbox("Model Type", ["GRU", "LSTM", "RNN", "PINN", "Hybrid"], index=0, key="model_type_select")
+    model_type = st.selectbox("Model Type", ["GRU", "LSTM", "RNN", "Hybrid"], index=0, key="model_type_select")
     st.session_state.model_type = model_type
     
     st.markdown("**Training Parameters**")
@@ -232,27 +232,20 @@ with col2:
     
     with st.expander("Model Architecture", expanded=False):
         if model_type == "Hybrid":
-            valid_options = ["GRU", "LSTM", "RNN", "PINN"]
-            # Get the current value or default to ["GRU"]
-            current_hybrid_models = st.session_state.get('hybrid_models', ["GRU"])
-            # Validate and sanitize the current value
-            if not isinstance(current_hybrid_models, list) or not all(isinstance(x, str) and x in valid_options for x in current_hybrid_models):
-                current_hybrid_models = ["GRU"]
-            # Debug to inspect the value being passed
-            st.write("Debug: Current hybrid_models =", current_hybrid_models)
+            valid_options = ["GRU", "LSTM", "RNN"]
+            if 'hybrid_models' not in st.session_state or not isinstance(st.session_state.hybrid_models, list):
+                st.session_state.hybrid_models = ["GRU"]
             hybrid_models = st.multiselect(
                 "Select Hybrid Models",
                 options=valid_options,
-                default=current_hybrid_models,
-                key="hybrid_models"
+                default=st.session_state.hybrid_models,
+                key="hybrid_models_select"
             )
-            # Update session state only if the selection changes and is valid
             if hybrid_models and hybrid_models != st.session_state.hybrid_models:
                 st.session_state.hybrid_models = hybrid_models
-            # If multiselect fails or returns empty, use the sanitized default
             if not hybrid_models:
+                st.warning("Please select at least one hybrid model. Defaulting to GRU.")
                 st.session_state.hybrid_models = ["GRU"]
-                st.warning("Hybrid model selection reset to default due to an issue.")
         elif model_type == "GRU":
             gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=st.session_state.gru_layers, step=1, key="gru_layers")
             if gru_layers != st.session_state.gru_layers:
