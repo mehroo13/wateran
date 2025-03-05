@@ -124,7 +124,7 @@ for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot
         if key == 'num_lags':
             st.session_state[key] = DEFAULT_NUM_LAGS
         elif key in ['gru_layers', 'lstm_layers', 'rnn_layers', 'dense_layers']:
-            st.session_state[key] = 1  # Default to 1 layer
+            st.session_state[key] = 1
         elif key == 'gru_units':
             st.session_state[key] = [DEFAULT_GRU_UNITS]
         elif key == 'lstm_units':
@@ -223,7 +223,9 @@ with col2:
     epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10)
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8)
     train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
-    st.session_state.num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags")
+    num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags")
+    if num_lags != st.session_state.num_lags:  # Update only if changed
+        st.session_state.num_lags = num_lags
     
     with st.expander("Model Architecture", expanded=False):
         if model_type == "Hybrid":
@@ -315,7 +317,6 @@ with col2:
                 if "X_train" not in st.session_state or "y_train" not in st.session_state:
                     st.error("Please train the model first to generate training data.")
                 else:
-                    # Placeholder for suggest_hyperparams function
                     st.info(f"Suggested {model_type} Units: [64, 32] (Placeholder)")
         
         with col_btn3:
