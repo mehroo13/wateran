@@ -136,7 +136,7 @@ for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot
         elif key == 'learning_rate':
             st.session_state[key] = DEFAULT_LEARNING_RATE
         elif key == 'hybrid_models':
-            st.session_state[key] = ["GRU"]
+            st.session_state[key] = ["GRU"]  # Ensure hybrid_models is always a list
         else:
             st.session_state[key] = None
 
@@ -221,10 +221,6 @@ with col2:
     model_type = st.selectbox("Model Type", ["GRU", "LSTM", "RNN", "PINN", "Hybrid"], index=0, key="model_type_select")
     st.session_state.model_type = model_type
     
-    # Ensure hybrid_models is always a list before rendering any widgets
-    if st.session_state.hybrid_models is None:
-        st.session_state.hybrid_models = ["GRU"]
-    
     st.markdown("**Training Parameters**")
     num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags")
     if num_lags != st.session_state.num_lags:
@@ -236,29 +232,75 @@ with col2:
     
     with st.expander("Model Architecture", expanded=False):
         if model_type == "Hybrid":
-            hybrid_models = st.multiselect("Select Hybrid Models", ["GRU", "LSTM", "RNN", "PINN"], default=st.session_state.hybrid_models, key="hybrid_models")
+            valid_options = ["GRU", "LSTM", "RNN", "PINN"]
+            # Sanitize hybrid_models to ensure it's a list of valid options
+            current_hybrid_models = st.session_state.hybrid_models
+            if not isinstance(current_hybrid_models, list) or not all(isinstance(x, str) and x in valid_options for x in current_hybrid_models):
+                current_hybrid_models = ["GRU"]  # Reset to default if invalid
+            hybrid_models = st.multiselect(
+                "Select Hybrid Models",
+                valid_options,
+                default=current_hybrid_models,
+                key="hybrid_models"
+            )
             if hybrid_models != st.session_state.hybrid_models:
                 st.session_state.hybrid_models = hybrid_models
         elif model_type == "GRU":
             gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=st.session_state.gru_layers, step=1, key="gru_layers")
             if gru_layers != st.session_state.gru_layers:
                 st.session_state.gru_layers = gru_layers
-            st.session_state.gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.gru_units[i] if i < len(st.session_state.gru_units) else DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}") for i in range(st.session_state.gru_layers)]
+            st.session_state.gru_units = [
+                st.number_input(
+                    f"GRU Layer {i+1} Units",
+                    min_value=8,
+                    max_value=512,
+                    value=st.session_state.gru_units[i] if i < len(st.session_state.gru_units) else DEFAULT_GRU_UNITS,
+                    step=8,
+                    key=f"gru_{i}"
+                ) for i in range(st.session_state.gru_layers)
+            ]
         elif model_type == "LSTM":
             lstm_layers = st.number_input("LSTM Layers", min_value=1, max_value=5, value=st.session_state.lstm_layers, step=1, key="lstm_layers")
             if lstm_layers != st.session_state.lstm_layers:
                 st.session_state.lstm_layers = lstm_layers
-            st.session_state.lstm_units = [st.number_input(f"LSTM Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.lstm_units[i] if i < len(st.session_state.lstm_units) else DEFAULT_LSTM_UNITS, step=8, key=f"lstm_{i}") for i in range(st.session_state.lstm_layers)]
+            st.session_state.lstm_units = [
+                st.number_input(
+                    f"LSTM Layer {i+1} Units",
+                    min_value=8,
+                    max_value=512,
+                    value=st.session_state.lstm_units[i] if i < len(st.session_state.lstm_units) else DEFAULT_LSTM_UNITS,
+                    step=8,
+                    key=f"lstm_{i}"
+                ) for i in range(st.session_state.lstm_layers)
+            ]
         elif model_type == "RNN":
             rnn_layers = st.number_input("RNN Layers", min_value=1, max_value=5, value=st.session_state.rnn_layers, step=1, key="rnn_layers")
             if rnn_layers != st.session_state.rnn_layers:
                 st.session_state.rnn_layers = rnn_layers
-            st.session_state.rnn_units = [st.number_input(f"RNN Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.rnn_units[i] if i < len(st.session_state.rnn_units) else DEFAULT_RNN_UNITS, step=8, key=f"rnn_{i}") for i in range(st.session_state.rnn_layers)]
+            st.session_state.rnn_units = [
+                st.number_input(
+                    f"RNN Layer {i+1} Units",
+                    min_value=8,
+                    max_value=512,
+                    value=st.session_state.rnn_units[i] if i < len(st.session_state.rnn_units) else DEFAULT_RNN_UNITS,
+                    step=8,
+                    key=f"rnn_{i}"
+                ) for i in range(st.session_state.rnn_layers)
+            ]
         
         dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=st.session_state.dense_layers, step=1, key="dense_layers")
         if dense_layers != st.session_state.dense_layers:
             st.session_state.dense_layers = dense_layers
-        st.session_state.dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.dense_units[i] if i < len(st.session_state.dense_units) else DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(st.session_state.dense_layers)]
+        st.session_state.dense_units = [
+            st.number_input(
+                f"Dense Layer {i+1} Units",
+                min_value=8,
+                max_value=512,
+                value=st.session_state.dense_units[i] if i < len(st.session_state.dense_units) else DEFAULT_DENSE_UNITS,
+                step=8,
+                key=f"dense_{i}"
+            ) for i in range(st.session_state.dense_layers)
+        ]
         learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=st.session_state.learning_rate, format="%.5f", key="learning_rate")
         if learning_rate != st.session_state.learning_rate:
             st.session_state.learning_rate = learning_rate
