@@ -66,9 +66,9 @@ class StreamlitProgressCallback(tf.keras.callbacks.Callback):
 
 # -------------------- Physics-Informed Loss (PINN) --------------------
 def pinn_loss(y_true, y_pred):
-    # Ensure shapes are compatible
-    y_true = tf.ensure_shape(y_true, [None])  # Flatten to (batch_size,)
-    y_pred = tf.ensure_shape(y_pred, [None])  # Flatten to (batch_size,)
+    # Reshape y_pred to match y_true's shape (batch_size,)
+    y_pred = tf.reshape(y_pred, [-1])  # Flatten to (batch_size,)
+    y_true = tf.reshape(y_true, [-1])  # Ensure y_true is (batch_size,)
     mse_loss = tf.keras.losses.mean_squared_error(y_true, y_pred)
     physics_loss = tf.reduce_mean(tf.square(tf.nn.relu(-y_pred)))  # Penalize negative predictions
     return mse_loss + 0.1 * physics_loss
@@ -90,7 +90,6 @@ def build_model(input_shape, model_type, layers, units, dense_layers, dense_unit
         for idx, sub_model in enumerate(selected_models):
             sub_units = units[:layers_per_model] if len(units) >= layers_per_model else units + [units[-1]] * (layers_per_model - len(units))
             for i in range(layers_per_model):
-                # Only the last layer of the last model should not return sequences
                 return_seq = not (idx == len(selected_models) - 1 and i == layers_per_model - 1)
                 if sub_model == "GRU":
                     model.add(tf.keras.layers.GRU(sub_units[i], return_sequences=return_seq, 
@@ -441,7 +440,6 @@ with col2:
                 with st.spinner("Training in progress..."):
                     progress_placeholder = st.empty()
                     callback = StreamlitProgressCallback(epochs, progress_placeholder)
-                    # Debugging: Print shapes before fitting
                     st.write(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
                     st.session_state.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1, 
                                               callbacks=[callback, early_stopping, lr_scheduler])
