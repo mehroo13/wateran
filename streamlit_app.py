@@ -221,18 +221,21 @@ with col2:
     model_type = st.selectbox("Model Type", ["GRU", "LSTM", "RNN", "PINN", "Hybrid"], index=0, key="model_type_select")
     st.session_state.model_type = model_type
     
+    # Ensure hybrid_models is always a list before rendering any widgets
+    if st.session_state.hybrid_models is None:
+        st.session_state.hybrid_models = ["GRU"]
+    
     st.markdown("**Training Parameters**")
-    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10)
-    batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8)
-    train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
     num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags")
     if num_lags != st.session_state.num_lags:
         st.session_state.num_lags = num_lags
     
+    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10)
+    batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8)
+    train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
+    
     with st.expander("Model Architecture", expanded=False):
         if model_type == "Hybrid":
-            if st.session_state.hybrid_models is None:
-                st.session_state.hybrid_models = ["GRU"]
             hybrid_models = st.multiselect("Select Hybrid Models", ["GRU", "LSTM", "RNN", "PINN"], default=st.session_state.hybrid_models, key="hybrid_models")
             if hybrid_models != st.session_state.hybrid_models:
                 st.session_state.hybrid_models = hybrid_models
