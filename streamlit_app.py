@@ -66,10 +66,9 @@ class StreamlitProgressCallback(tf.keras.callbacks.Callback):
 
 # -------------------- Physics-Informed Loss (PINN) --------------------
 def pinn_loss(y_true, y_pred):
-    # Basic physics-informed loss: MSE + a simple constraint (e.g., non-negativity)
     mse_loss = tf.keras.losses.mean_squared_error(y_true, y_pred)
     physics_loss = tf.reduce_mean(tf.square(tf.nn.relu(-y_pred)))  # Penalize negative predictions
-    return mse_loss + 0.1 * physics_loss  # Adjust weighting as needed
+    return mse_loss + 0.1 * physics_loss
 
 # -------------------- Model Definition --------------------
 @st.cache_resource
@@ -77,40 +76,48 @@ def build_model(input_shape, model_type, layers, units, dense_layers, dense_unit
     model = tf.keras.Sequential()
     
     if model_type == "Hybrid":
-        for sub_model in st.session_state.hybrid_models:
-            if sub_model == "GRU":
-                for i in range(layers):
-                    model.add(tf.keras.layers.GRU(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
-                    model.add(tf.keras.layers.Dropout(0.2))
-            elif sub_model == "LSTM":
-                for i in range(layers):
-                    model.add(tf.keras.layers.LSTM(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
-                    model.add(tf.keras.layers.Dropout(0.2))
-            elif sub_model == "RNN":
-                for i in range(layers):
-                    model.add(tf.keras.layers.SimpleRNN(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
-                    model.add(tf.keras.layers.Dropout(0.2))
-            elif sub_model == "PINN":
-                for i in range(layers):
-                    model.add(tf.keras.layers.LSTM(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))  # Using LSTM as base
-                    model.add(tf.keras.layers.Dropout(0.2))
+        selected_models = st.session_state.hybrid_models
+        if not selected_models:
+            st.error("No hybrid models selected. Defaulting to GRU.")
+            selected_models = ["GRU"]
+        
+        total_layers = layers  # Total layers to distribute among selected models
+        layers_per_model = max(1, total_layers // len(selected_models))  # Ensure at least 1 layer per model
+        
+        for sub_model in selected_models:
+            sub_units = units[:layers_per_model] if len(units) >= layers_per_model else units + [units[-1]] * (layers_per_model - len(units))
+            for i in range(layers_per_model):
+                return_seq = i < layers_per_model - 1 or sub_model != selected_models[-1]  # Return sequences except for the last layer of the last model
+                if sub_model == "GRU":
+                    model.add(tf.keras.layers.GRU(sub_units[i], return_sequences=return_seq, 
+                                                  input_shape=input_shape if i == 0 and sub_model == selected_models[0] else None))
+                elif sub_model == "LSTM":
+                    model.add(tf.keras.layers.LSTM(sub_units[i], return_sequences=return_seq, 
+                                                   input_shape=input_shape if i == 0 and sub_model == selected_models[0] else None))
+                elif sub_model == "RNN":
+                    model.add(tf.keras.layers.SimpleRNN(sub_units[i], return_sequences=return_seq, 
+                                                        input_shape=input_shape if i == 0 and sub_model == selected_models[0] else None))
+                elif sub_model == "PINN":
+                    model.add(tf.keras.layers.LSTM(sub_units[i], return_sequences=return_seq, 
+                                                   input_shape=input_shape if i == 0 and sub_model == selected_models[0] else None))
+                model.add(tf.keras.layers.Dropout(0.2))
     else:
         for i in range(layers):
+            return_seq = i < layers - 1
             if model_type == "GRU":
-                model.add(tf.keras.layers.GRU(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
+                model.add(tf.keras.layers.GRU(units[i], return_sequences=return_seq, input_shape=input_shape if i == 0 else None))
             elif model_type == "LSTM":
-                model.add(tf.keras.layers.LSTM(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
+                model.add(tf.keras.layers.LSTM(units[i], return_sequences=return_seq, input_shape=input_shape if i == 0 else None))
             elif model_type == "RNN":
-                model.add(tf.keras.layers.SimpleRNN(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
+                model.add(tf.keras.layers.SimpleRNN(units[i], return_sequences=return_seq, input_shape=input_shape if i == 0 else None))
             elif model_type == "PINN":
-                model.add(tf.keras.layers.LSTM(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))  # Base layer for PINN
+                model.add(tf.keras.layers.LSTM(units[i], return_sequences=return_seq, input_shape=input_shape if i == 0 else None))
             model.add(tf.keras.layers.Dropout(0.2))
     
     for unit in dense_units[:dense_layers]:
         model.add(tf.keras.layers.Dense(unit, activation='relu'))
     model.add(tf.keras.layers.Dense(1))
     
-    # Use custom PINN loss if model_type is PINN or Hybrid includes PINN
     if model_type == "PINN" or (model_type == "Hybrid" and "PINN" in st.session_state.hybrid_models):
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss=pinn_loss)
     else:
@@ -176,7 +183,8 @@ with st.sidebar:
         - **Dynamic Variables**: Use lagged values for time series modeling.
         - **Static Variables**: Constant features, no lags applied.
         - **Metrics**: NSE/KGE ideal = 1, RMSE/MAE ideal = 0.
-        - **PINN**: Physics-Informed Neural Network enforces physical constraints (e.g., non-negativity).
+        - **PINN**: Enforces physical constraints (e.g., non-negativity).
+        - **Hybrid**: Combine any number of GRU, LSTM, RNN, PINN models.
         """)
 
 # Main Layout
@@ -262,7 +270,7 @@ with col2:
             if 'hybrid_models' not in st.session_state or not isinstance(st.session_state.hybrid_models, list):
                 st.session_state.hybrid_models = ["GRU"]
             hybrid_models = st.multiselect(
-                "Select Hybrid Models",
+                "Select Hybrid Models (1 to all)",
                 options=valid_options,
                 default=st.session_state.hybrid_models,
                 key="hybrid_models_select"
@@ -272,6 +280,19 @@ with col2:
             if not hybrid_models:
                 st.warning("Please select at least one hybrid model. Defaulting to GRU.")
                 st.session_state.hybrid_models = ["GRU"]
+            hybrid_layers = st.number_input("Total Hybrid Layers", min_value=1, max_value=10, value=max(st.session_state.gru_layers, 1), 
+                                           step=1, key="hybrid_layers")
+            st.session_state.gru_layers = hybrid_layers  # Reuse GRU layers as a proxy for total layers in Hybrid
+            st.session_state.gru_units = [
+                st.number_input(
+                    f"Hybrid Layer {i+1} Units",
+                    min_value=8,
+                    max_value=512,
+                    value=st.session_state.gru_units[i] if i < len(st.session_state.gru_units) else DEFAULT_GRU_UNITS,
+                    step=8,
+                    key=f"hybrid_{i}"
+                ) for i in range(hybrid_layers)
+            ]
         elif model_type == "GRU":
             gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=st.session_state.gru_layers, step=1, key="gru_layers")
             if gru_layers != st.session_state.gru_layers:
@@ -392,16 +413,16 @@ with col2:
                 st.session_state.X_train, st.session_state.y_train = X_train, y_train
                 st.session_state.X_test, st.session_state.y_test = X_test, y_test
 
-                layers = (st.session_state.gru_layers if model_type == "GRU" else 
+                layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
                           st.session_state.lstm_layers if model_type == "LSTM" else 
                           st.session_state.rnn_layers if model_type == "RNN" else 
                           st.session_state.pinn_layers if model_type == "PINN" else 
-                          max(st.session_state.gru_layers, st.session_state.lstm_layers, st.session_state.rnn_layers, st.session_state.pinn_layers))
-                units = (st.session_state.gru_units if model_type == "GRU" else 
+                          st.session_state.gru_layers)  # Default to GRU layers for Hybrid
+                units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
                          st.session_state.lstm_units if model_type == "LSTM" else 
                          st.session_state.rnn_units if model_type == "RNN" else 
                          st.session_state.pinn_units if model_type == "PINN" else 
-                         st.session_state.gru_units)  # Default to GRU units for Hybrid
+                         st.session_state.gru_units)
                 st.session_state.model = build_model(
                     (X_train.shape[1], X_train.shape[2]), 
                     model_type, 
@@ -459,12 +480,12 @@ with col2:
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
-                layers = (st.session_state.gru_layers if model_type == "GRU" else 
+                layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
                           st.session_state.lstm_layers if model_type == "LSTM" else 
                           st.session_state.rnn_layers if model_type == "RNN" else 
                           st.session_state.pinn_layers if model_type == "PINN" else 
-                          max(st.session_state.gru_layers, st.session_state.lstm_layers, st.session_state.rnn_layers, st.session_state.pinn_layers))
-                units = (st.session_state.gru_units if model_type == "GRU" else 
+                          st.session_state.gru_layers)
+                units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
                          st.session_state.lstm_units if model_type == "LSTM" else 
                          st.session_state.rnn_units if model_type == "RNN" else 
                          st.session_state.pinn_units if model_type == "PINN" else 
@@ -543,12 +564,12 @@ if st.session_state.feature_cols:
             for train_idx, val_idx in tscv.split(X):
                 X_tr, X_val = X[train_idx], X[val_idx]
                 y_tr, y_val = y[train_idx], y[val_idx]
-                layers = (st.session_state.gru_layers if model_type == "GRU" else 
+                layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
                           st.session_state.lstm_layers if model_type == "LSTM" else 
                           st.session_state.rnn_layers if model_type == "RNN" else 
                           st.session_state.pinn_layers if model_type == "PINN" else 
-                          max(st.session_state.gru_layers, st.session_state.lstm_layers, st.session_state.rnn_layers, st.session_state.pinn_layers))
-                units = (st.session_state.gru_units if model_type == "GRU" else 
+                          st.session_state.gru_layers)
+                units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
                          st.session_state.lstm_units if model_type == "LSTM" else 
                          st.session_state.rnn_units if model_type == "RNN" else 
                          st.session_state.pinn_units if model_type == "PINN" else 
@@ -682,12 +703,12 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     X_new = new_scaled[:, :-1]
                     X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
                     
-                    layers = (st.session_state.gru_layers if model_type == "GRU" else 
+                    layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
                               st.session_state.lstm_layers if model_type == "LSTM" else 
                               st.session_state.rnn_layers if model_type == "RNN" else 
                               st.session_state.pinn_layers if model_type == "PINN" else 
-                              max(st.session_state.gru_layers, st.session_state.lstm_layers, st.session_state.rnn_layers, st.session_state.pinn_layers))
-                    units = (st.session_state.gru_units if model_type == "GRU" else 
+                              st.session_state.gru_layers)
+                    units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
                              st.session_state.lstm_units if model_type == "LSTM" else 
                              st.session_state.rnn_units if model_type == "RNN" else 
                              st.session_state.pinn_units if model_type == "PINN" else 
