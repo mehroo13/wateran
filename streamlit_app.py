@@ -224,25 +224,35 @@ with col2:
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8)
     train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
     num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags")
-    if num_lags != st.session_state.num_lags:  # Update only if changed
+    if num_lags != st.session_state.num_lags:
         st.session_state.num_lags = num_lags
     
     with st.expander("Model Architecture", expanded=False):
         if model_type == "Hybrid":
             st.session_state.hybrid_models = st.multiselect("Select Hybrid Models", ["GRU", "LSTM", "RNN", "PINN"], default=["GRU"], key="hybrid_models")
         elif model_type == "GRU":
-            st.session_state.gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=st.session_state.gru_layers, step=1, key="gru_layers")
+            gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=st.session_state.gru_layers, step=1, key="gru_layers")
+            if gru_layers != st.session_state.gru_layers:
+                st.session_state.gru_layers = gru_layers
             st.session_state.gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.gru_units[i] if i < len(st.session_state.gru_units) else DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}") for i in range(st.session_state.gru_layers)]
         elif model_type == "LSTM":
-            st.session_state.lstm_layers = st.number_input("LSTM Layers", min_value=1, max_value=5, value=st.session_state.lstm_layers, step=1, key="lstm_layers")
+            lstm_layers = st.number_input("LSTM Layers", min_value=1, max_value=5, value=st.session_state.lstm_layers, step=1, key="lstm_layers")
+            if lstm_layers != st.session_state.lstm_layers:
+                st.session_state.lstm_layers = lstm_layers
             st.session_state.lstm_units = [st.number_input(f"LSTM Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.lstm_units[i] if i < len(st.session_state.lstm_units) else DEFAULT_LSTM_UNITS, step=8, key=f"lstm_{i}") for i in range(st.session_state.lstm_layers)]
         elif model_type == "RNN":
-            st.session_state.rnn_layers = st.number_input("RNN Layers", min_value=1, max_value=5, value=st.session_state.rnn_layers, step=1, key="rnn_layers")
+            rnn_layers = st.number_input("RNN Layers", min_value=1, max_value=5, value=st.session_state.rnn_layers, step=1, key="rnn_layers")
+            if rnn_layers != st.session_state.rnn_layers:
+                st.session_state.rnn_layers = rnn_layers
             st.session_state.rnn_units = [st.number_input(f"RNN Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.rnn_units[i] if i < len(st.session_state.rnn_units) else DEFAULT_RNN_UNITS, step=8, key=f"rnn_{i}") for i in range(st.session_state.rnn_layers)]
         
-        st.session_state.dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=st.session_state.dense_layers, step=1, key="dense_layers")
+        dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=st.session_state.dense_layers, step=1, key="dense_layers")
+        if dense_layers != st.session_state.dense_layers:
+            st.session_state.dense_layers = dense_layers
         st.session_state.dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.dense_units[i] if i < len(st.session_state.dense_units) else DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(st.session_state.dense_layers)]
-        st.session_state.learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=st.session_state.learning_rate, format="%.5f", key="learning_rate")
+        learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=st.session_state.learning_rate, format="%.5f", key="learning_rate")
+        if learning_rate != st.session_state.learning_rate:
+            st.session_state.learning_rate = learning_rate
     
     st.markdown("**Evaluation Metrics**")
     all_metrics = ["RMSE", "MAE", "R²", "NSE", "KGE"]
