@@ -40,8 +40,6 @@ def kge(actual, predicted):
     beta = np.mean(predicted) / np.mean(actual)
     return 1 - np.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
 
-# Additional metric functions...
-
 # -------------------- Metrics Dictionary --------------------
 all_metrics_dict = {
     "RMSE": lambda a, p: np.sqrt(mean_squared_error(a, p)),
@@ -49,7 +47,6 @@ all_metrics_dict = {
     "R²": lambda a, p: r2_score(a, p),
     "NSE": nse,
     "KGE": kge,
-    # Add other metrics...
 }
 
 # -------------------- Custom Callbacks --------------------
@@ -85,8 +82,6 @@ def build_model(input_shape, model_type, layers, units, dense_layers, dense_unit
                 for i in range(layers):
                     model.add(tf.keras.layers.SimpleRNN(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
                     model.add(tf.keras.layers.Dropout(0.2))
-            # Include layers for PINN, if applicable...
-    
     else:
         for i in range(layers):
             if model_type == "GRU":
@@ -103,14 +98,6 @@ def build_model(input_shape, model_type, layers, units, dense_layers, dense_unit
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss='mse')
     return model
 
-# -------------------- Hyperparameter Suggestion --------------------
-def suggest_hyperparams(X_train, y_train, model_type):
-    # Similar to the original suggestion function...
-    pass
-
-# -------------------- Save/Load Functions --------------------
-# Similar to the original save/load functions...
-
 # -------------------- Styling and Streamlit UI --------------------
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 st.markdown("""
@@ -125,16 +112,31 @@ st.markdown("""
 st.title("🌊 Wateran: Time Series Prediction")
 st.markdown("**Simple, Fast, and Accurate Predictions Powered by Neural Networks**", unsafe_allow_html=True)
 
-# Initialize session state
+# Initialize session state with defaults
 if 'model_type' not in st.session_state:
-    st.session_state.model_type = "GRU"  # Default to GRU
+    st.session_state.model_type = "GRU"
 for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot', 'scaler', 'input_vars', 'output_var', 
             'new_predictions_df', 'new_fig', 'gru_layers', 'lstm_layers', 'rnn_layers', 'gru_units', 'lstm_units', 
             'rnn_units', 'dense_layers', 'dense_units', 'learning_rate', 'feature_cols', 'new_data_file', 
             'selected_inputs', 'new_date_col', 'selected_metrics', 'var_types', 'new_var_types', 'num_lags', 
-            'date_col', 'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model']:
+            'date_col', 'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model', 'hybrid_models']:
     if key not in st.session_state:
-        st.session_state[key] = None if key != 'num_lags' else DEFAULT_NUM_LAGS
+        if key == 'num_lags':
+            st.session_state[key] = DEFAULT_NUM_LAGS
+        elif key in ['gru_layers', 'lstm_layers', 'rnn_layers', 'dense_layers']:
+            st.session_state[key] = 1  # Default to 1 layer
+        elif key == 'gru_units':
+            st.session_state[key] = [DEFAULT_GRU_UNITS]
+        elif key == 'lstm_units':
+            st.session_state[key] = [DEFAULT_LSTM_UNITS]
+        elif key == 'rnn_units':
+            st.session_state[key] = [DEFAULT_RNN_UNITS]
+        elif key == 'dense_units':
+            st.session_state[key] = [DEFAULT_DENSE_UNITS]
+        elif key == 'learning_rate':
+            st.session_state[key] = DEFAULT_LEARNING_RATE
+        else:
+            st.session_state[key] = None
 
 # Sidebar for Navigation and Help
 with st.sidebar:
@@ -214,50 +216,35 @@ with col1:
 with col2:
     st.subheader("⚙️ Model Configuration", divider="blue")
     
-    # Model Type Selection
-    model_type = st.selectbox("Model Type", ["GRU", "LSTM", "RNN", "PINN", "Hybrid"], index=0, key="model_type_select", help="Choose between GRU, LSTM, RNN, PINN, or Hybrid architecture.")
-    st.session_state.model_type = model_type  # Update model_type dynamically
+    model_type = st.selectbox("Model Type", ["GRU", "LSTM", "RNN", "PINN", "Hybrid"], index=0, key="model_type_select")
+    st.session_state.model_type = model_type
     
     st.markdown("**Training Parameters**")
     epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10)
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8)
     train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
-    st.number_input("Number of Lags", min_value=1, max_value=10, value=DEFAULT_NUM_LAGS if st.session_state.num_lags is None else st.session_state.num_lags, step=1, key="num_lags")
+    st.session_state.num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags")
     
     with st.expander("Model Architecture", expanded=False):
         if model_type == "Hybrid":
-            hybrid_models = st.multiselect("Select Hybrid Models", ["GRU", "LSTM", "RNN", "PINN"], default=["GRU"], key="hybrid_models")
-            st.session_state.hybrid_models = hybrid_models
-            
+            st.session_state.hybrid_models = st.multiselect("Select Hybrid Models", ["GRU", "LSTM", "RNN", "PINN"], default=["GRU"], key="hybrid_models")
         elif model_type == "GRU":
-            gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=1, step=1, key="gru_layers", help="Number of GRU layers.")
-            gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}") for i in range(gru_layers)]
-            st.session_state.gru_layers = gru_layers
-            st.session_state.gru_units = gru_units
-            
+            st.session_state.gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=st.session_state.gru_layers, step=1, key="gru_layers")
+            st.session_state.gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.gru_units[i] if i < len(st.session_state.gru_units) else DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}") for i in range(st.session_state.gru_layers)]
         elif model_type == "LSTM":
-            lstm_layers = st.number_input("LSTM Layers", min_value=1, max_value=5, value=1, step=1, key="lstm_layers", help="Number of LSTM layers.")
-            lstm_units = [st.number_input(f"LSTM Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_LSTM_UNITS, step=8, key=f"lstm_{i}") for i in range(lstm_layers)]
-            st.session_state.lstm_layers = lstm_layers
-            st.session_state.lstm_units = lstm_units
-            
+            st.session_state.lstm_layers = st.number_input("LSTM Layers", min_value=1, max_value=5, value=st.session_state.lstm_layers, step=1, key="lstm_layers")
+            st.session_state.lstm_units = [st.number_input(f"LSTM Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.lstm_units[i] if i < len(st.session_state.lstm_units) else DEFAULT_LSTM_UNITS, step=8, key=f"lstm_{i}") for i in range(st.session_state.lstm_layers)]
         elif model_type == "RNN":
-            rnn_layers = st.number_input("RNN Layers", min_value=1, max_value=5, value=1, step=1, key="rnn_layers", help="Number of RNN layers.")
-            rnn_units = [st.number_input(f"RNN Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_RNN_UNITS, step=8, key=f"rnn_{i}") for i in range(rnn_layers)]
-            st.session_state.rnn_layers = rnn_layers
-            st.session_state.rnn_units = rnn_units
-            
-        dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=1, step=1, key="dense_layers")
-        dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(dense_layers)]
-        learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=DEFAULT_LEARNING_RATE, format="%.5f", key="learning_rate")
-        st.session_state.dense_layers = dense_layers
-        st.session_state.dense_units = dense_units
-        st.session_state.learning_rate = learning_rate
+            st.session_state.rnn_layers = st.number_input("RNN Layers", min_value=1, max_value=5, value=st.session_state.rnn_layers, step=1, key="rnn_layers")
+            st.session_state.rnn_units = [st.number_input(f"RNN Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.rnn_units[i] if i < len(st.session_state.rnn_units) else DEFAULT_RNN_UNITS, step=8, key=f"rnn_{i}") for i in range(st.session_state.rnn_layers)]
+        
+        st.session_state.dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=st.session_state.dense_layers, step=1, key="dense_layers")
+        st.session_state.dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=st.session_state.dense_units[i] if i < len(st.session_state.dense_units) else DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(st.session_state.dense_layers)]
+        st.session_state.learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=st.session_state.learning_rate, format="%.5f", key="learning_rate")
     
     st.markdown("**Evaluation Metrics**")
     all_metrics = ["RMSE", "MAE", "R²", "NSE", "KGE"]
-    selected_metrics = st.multiselect("Select Metrics", all_metrics, default=all_metrics, key="metrics_select")
-    st.session_state.selected_metrics = selected_metrics or all_metrics
+    st.session_state.selected_metrics = st.multiselect("Select Metrics", all_metrics, default=all_metrics, key="metrics_select") or all_metrics
 
     if uploaded_file:
         col_btn1, col_btn2, col_btn3 = st.columns(3)
@@ -269,7 +256,7 @@ with col2:
                     st.warning("Missing values detected. Handled during preprocessing.")
 
                 feature_cols = []
-                num_lags = st.session_state["num_lags"]
+                num_lags = st.session_state.num_lags
                 for var in st.session_state.input_vars:
                     if st.session_state.var_types[var] == "Dynamic":
                         for lag in range(1, num_lags + 1):
@@ -302,12 +289,11 @@ with col2:
                 st.session_state.X_test = X_test
                 st.session_state.y_test = y_test
 
-                # Use the appropriate layers and units based on model_type
-                layers = st.session_state.gru_layers if st.session_state.model_type == "GRU" else st.session_state.lstm_layers if st.session_state.model_type == "LSTM" else st.session_state.rnn_layers
-                units = st.session_state.gru_units if st.session_state.model_type == "GRU" else st.session_state.lstm_units if st.session_state.model_type == "LSTM" else st.session_state.rnn_units
+                layers = st.session_state.gru_layers if model_type == "GRU" else st.session_state.lstm_layers if model_type == "LSTM" else st.session_state.rnn_layers
+                units = st.session_state.gru_units if model_type == "GRU" else st.session_state.lstm_units if model_type == "LSTM" else st.session_state.rnn_units
                 st.session_state.model = build_model(
                     (X_train.shape[1], X_train.shape[2]), 
-                    st.session_state.model_type, 
+                    model_type, 
                     layers, 
                     units, 
                     st.session_state.dense_layers, 
@@ -325,12 +311,12 @@ with col2:
                 st.success("Model trained and saved successfully!")
         
         with col_btn2:
-            if st.button(f"🤖 Suggest {st.session_state.model_type} Units"):
+            if st.button(f"🤖 Suggest {model_type} Units"):
                 if "X_train" not in st.session_state or "y_train" not in st.session_state:
                     st.error("Please train the model first to generate training data.")
                 else:
-                    suggested_units = suggest_hyperparams(st.session_state.X_train, st.session_state.y_train, st.session_state.model_type)
-                    st.info(f"Suggested {st.session_state.model_type} Units: {suggested_units}")
+                    # Placeholder for suggest_hyperparams function
+                    st.info(f"Suggested {model_type} Units: [64, 32] (Placeholder)")
         
         with col_btn3:
             if st.button("🔍 Test Model"):
@@ -339,7 +325,7 @@ with col2:
                     st.stop()
                 df = st.session_state.df.copy()
                 feature_cols = st.session_state.feature_cols
-                num_lags = st.session_state["num_lags"]
+                num_lags = st.session_state.num_lags
                 for var in st.session_state.input_vars:
                     if st.session_state.var_types[var] == "Dynamic":
                         for lag in range(1, num_lags + 1):
@@ -362,11 +348,11 @@ with col2:
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
-                layers = st.session_state.gru_layers if st.session_state.model_type == "GRU" else st.session_state.lstm_layers if st.session_state.model_type == "LSTM" else st.session_state.rnn_layers
-                units = st.session_state.gru_units if st.session_state.model_type == "GRU" else st.session_state.lstm_units if st.session_state.model_type == "LSTM" else st.session_state.rnn_units
+                layers = st.session_state.gru_layers if model_type == "GRU" else st.session_state.lstm_layers if model_type == "LSTM" else st.session_state.rnn_layers
+                units = st.session_state.gru_units if model_type == "GRU" else st.session_state.lstm_units if model_type == "LSTM" else st.session_state.rnn_units
                 st.session_state.model = build_model(
                     (X_train.shape[1], X_train.shape[2]), 
-                    st.session_state.model_type, 
+                    model_type, 
                     layers, 
                     units, 
                     st.session_state.dense_layers, 
@@ -385,7 +371,7 @@ with col2:
                 metrics = {metric: {
                     "Training": all_metrics_dict[metric](y_train_actual, y_train_pred),
                     "Testing": all_metrics_dict[metric](y_test_actual, y_test_pred)
-                } for metric in selected_metrics}
+                } for metric in st.session_state.selected_metrics}
                 st.session_state.metrics = metrics
 
                 dates = df[st.session_state.date_col] if st.session_state.date_col else pd.RangeIndex(len(df))
@@ -416,7 +402,7 @@ if st.session_state.feature_cols:
         if st.button("Run Cross-Validation"):
             df = st.session_state.df.copy()
             feature_cols = st.session_state.feature_cols
-            num_lags = st.session_state["num_lags"]
+            num_lags = st.session_state.num_lags
             for var in st.session_state.input_vars:
                 if st.session_state.var_types[var] == "Dynamic":
                     for lag in range(1, num_lags + 1):
@@ -434,15 +420,15 @@ if st.session_state.feature_cols:
             X = X.reshape((X.shape[0], 1, X.shape[1]))
 
             tscv = TimeSeriesSplit(n_splits=5)
-            cv_metrics = {metric: [] for metric in selected_metrics}
+            cv_metrics = {metric: [] for metric in st.session_state.selected_metrics}
             for train_idx, val_idx in tscv.split(X):
                 X_tr, X_val = X[train_idx], X[val_idx]
                 y_tr, y_val = y[train_idx], y[val_idx]
-                layers = st.session_state.gru_layers if st.session_state.model_type == "GRU" else st.session_state.lstm_layers if st.session_state.model_type == "LSTM" else st.session_state.rnn_layers
-                units = st.session_state.gru_units if st.session_state.model_type == "GRU" else st.session_state.lstm_units if st.session_state.model_type == "LSTM" else st.session_state.rnn_units
+                layers = st.session_state.gru_layers if model_type == "GRU" else st.session_state.lstm_layers if model_type == "LSTM" else st.session_state.rnn_layers
+                units = st.session_state.gru_units if model_type == "GRU" else st.session_state.lstm_units if model_type == "LSTM" else st.session_state.rnn_units
                 model = build_model(
                     (X_tr.shape[1], X_tr.shape[2]), 
-                    st.session_state.model_type, 
+                    model_type, 
                     layers, 
                     units, 
                     st.session_state.dense_layers, 
@@ -453,9 +439,9 @@ if st.session_state.feature_cols:
                 y_val_pred = model.predict(X_val)
                 y_val_pred = scaler.inverse_transform(np.hstack([y_val_pred, X_val[:, 0, :]]))[:, 0]
                 y_val_actual = scaler.inverse_transform(np.hstack([y_val.reshape(-1, 1), X_val[:, 0, :]]))[:, 0]
-                for metric in selected_metrics:
+                for metric in st.session_state.selected_metrics:
                     cv_metrics[metric].append(all_metrics_dict[metric](y_val_actual, y_val_pred))
-            st.session_state.cv_metrics = {m: np.mean(cv_metrics[m]) for m in selected_metrics}
+            st.session_state.cv_metrics = {m: np.mean(cv_metrics[m]) for m in st.session_state.selected_metrics}
             st.write("Cross-Validation Results:", st.session_state.cv_metrics)
 
 # Results Section
@@ -465,9 +451,9 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
         if st.session_state.metrics:
             st.markdown("**📏 Performance Metrics**")
             metrics_df = pd.DataFrame({
-                "Metric": selected_metrics,
-                "Training": [f"{st.session_state.metrics[m]['Training']:.4f}" for m in selected_metrics],
-                "Testing": [f"{st.session_state.metrics[m]['Testing']:.4f}" for m in selected_metrics]
+                "Metric": st.session_state.selected_metrics,
+                "Training": [f"{st.session_state.metrics[m]['Training']:.4f}" for m in st.session_state.selected_metrics],
+                "Testing": [f"{st.session_state.metrics[m]['Testing']:.4f}" for m in st.session_state.selected_metrics]
             })
             st.dataframe(metrics_df.style.set_properties(**{'text-align': 'center'}), use_container_width=True)
         
@@ -499,7 +485,7 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
                 st.error("No model available. Please train or test a model first.")
             else:
                 plot_model(st.session_state.model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
-                st.image(MODEL_PLOT_PATH, caption=f"{st.session_state.model_type} Model Architecture")
+                st.image(MODEL_PLOT_PATH, caption=f"{model_type} Model Architecture")
 
 # New Data Prediction Section
 if os.path.exists(MODEL_WEIGHTS_PATH):
@@ -521,7 +507,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 
                 input_vars = st.session_state.input_vars
                 output_var = st.session_state.output_var
-                num_lags = st.session_state["num_lags"]
+                num_lags = st.session_state.num_lags
                 feature_cols = st.session_state.feature_cols
                 
                 available_new_inputs = [col for col in new_df.columns if col in input_vars and col != date_col]
@@ -566,12 +552,12 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     X_new = new_scaled[:, :-1]
                     X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
                     
-                    layers = st.session_state.gru_layers if st.session_state.model_type == "GRU" else st.session_state.lstm_layers if st.session_state.model_type == "LSTM" else st.session_state.rnn_layers
-                    units = st.session_state.gru_units if st.session_state.model_type == "GRU" else st.session_state.lstm_units if st.session_state.model_type == "LSTM" else st.session_state.rnn_units
+                    layers = st.session_state.gru_layers if model_type == "GRU" else st.session_state.lstm_layers if model_type == "LSTM" else st.session_state.rnn_layers
+                    units = st.session_state.gru_units if model_type == "GRU" else st.session_state.lstm_units if model_type == "LSTM" else st.session_state.rnn_units
                     if st.session_state.model is None:
                         st.session_state.model = build_model(
                             (X_new.shape[1], X_new.shape[2]), 
-                            st.session_state.model_type, 
+                            model_type, 
                             layers, 
                             units, 
                             st.session_state.dense_layers, 
@@ -599,7 +585,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         fig.write_image(buf, format="png")
                     except ValueError:
                         fig_alt, ax = plt.subplots()
-                        ax.plot(dates.values[-len(y_new_pred):], y=y_new_pred, label="Predicted")
+                        ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted")
                         ax.legend()
                         fig_alt.savefig(buf, format="png", bbox_inches="tight")
                     st.download_button(f"⬇️ Download Plot ({new_data_file.name})", buf.getvalue(), f"new_prediction_{new_data_file.name}.png", "image/png")
