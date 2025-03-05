@@ -17,6 +17,7 @@ import plotly.graph_objects as go
 DEFAULT_GRU_UNITS = 64
 DEFAULT_LSTM_UNITS = 64
 DEFAULT_RNN_UNITS = 64
+DEFAULT_PINN_UNITS = 64
 DEFAULT_DENSE_UNITS = 32
 DEFAULT_LEARNING_RATE = 0.001
 DEFAULT_EPOCHS = 50
@@ -63,39 +64,69 @@ class StreamlitProgressCallback(tf.keras.callbacks.Callback):
         self.progress_placeholder.progress(min(progress, 1.0))
         self.progress_placeholder.text(f"Epoch {self.current_epoch}/{self.total_epochs} completed")
 
+# -------------------- Physics-Informed Loss (PINN) --------------------
+def pinn_loss(y_true, y_pred):
+    # Ensure shapes are compatible
+    y_true = tf.ensure_shape(y_true, [None])  # Flatten to (batch_size,)
+    y_pred = tf.ensure_shape(y_pred, [None])  # Flatten to (batch_size,)
+    mse_loss = tf.keras.losses.mean_squared_error(y_true, y_pred)
+    physics_loss = tf.reduce_mean(tf.square(tf.nn.relu(-y_pred)))  # Penalize negative predictions
+    return mse_loss + 0.1 * physics_loss
+
 # -------------------- Model Definition --------------------
 @st.cache_resource
 def build_model(input_shape, model_type, layers, units, dense_layers, dense_units, learning_rate):
     model = tf.keras.Sequential()
     
     if model_type == "Hybrid":
-        for sub_model in st.session_state.hybrid_models:
-            if sub_model == "GRU":
-                for i in range(layers):
-                    model.add(tf.keras.layers.GRU(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
-                    model.add(tf.keras.layers.Dropout(0.2))
-            elif sub_model == "LSTM":
-                for i in range(layers):
-                    model.add(tf.keras.layers.LSTM(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
-                    model.add(tf.keras.layers.Dropout(0.2))
-            elif sub_model == "RNN":
-                for i in range(layers):
-                    model.add(tf.keras.layers.SimpleRNN(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
-                    model.add(tf.keras.layers.Dropout(0.2))
+        selected_models = st.session_state.hybrid_models
+        if not selected_models:
+            st.error("No hybrid models selected. Defaulting to GRU.")
+            selected_models = ["GRU"]
+        
+        total_layers = layers
+        layers_per_model = max(1, total_layers // len(selected_models))
+        
+        for idx, sub_model in enumerate(selected_models):
+            sub_units = units[:layers_per_model] if len(units) >= layers_per_model else units + [units[-1]] * (layers_per_model - len(units))
+            for i in range(layers_per_model):
+                # Only the last layer of the last model should not return sequences
+                return_seq = not (idx == len(selected_models) - 1 and i == layers_per_model - 1)
+                if sub_model == "GRU":
+                    model.add(tf.keras.layers.GRU(sub_units[i], return_sequences=return_seq, 
+                                                  input_shape=input_shape if idx == 0 and i == 0 else None))
+                elif sub_model == "LSTM":
+                    model.add(tf.keras.layers.LSTM(sub_units[i], return_sequences=return_seq, 
+                                                   input_shape=input_shape if idx == 0 and i == 0 else None))
+                elif sub_model == "RNN":
+                    model.add(tf.keras.layers.SimpleRNN(sub_units[i], return_sequences=return_seq, 
+                                                        input_shape=input_shape if idx == 0 and i == 0 else None))
+                elif sub_model == "PINN":
+                    model.add(tf.keras.layers.LSTM(sub_units[i], return_sequences=return_seq, 
+                                                   input_shape=input_shape if idx == 0 and i == 0 else None))
+                model.add(tf.keras.layers.Dropout(0.2))
     else:
         for i in range(layers):
+            return_seq = i < layers - 1
             if model_type == "GRU":
-                model.add(tf.keras.layers.GRU(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
+                model.add(tf.keras.layers.GRU(units[i], return_sequences=return_seq, input_shape=input_shape if i == 0 else None))
             elif model_type == "LSTM":
-                model.add(tf.keras.layers.LSTM(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
+                model.add(tf.keras.layers.LSTM(units[i], return_sequences=return_seq, input_shape=input_shape if i == 0 else None))
             elif model_type == "RNN":
-                model.add(tf.keras.layers.SimpleRNN(units[i], return_sequences=(i < layers - 1), input_shape=input_shape if i == 0 else None))
+                model.add(tf.keras.layers.SimpleRNN(units[i], return_sequences=return_seq, input_shape=input_shape if i == 0 else None))
+            elif model_type == "PINN":
+                model.add(tf.keras.layers.LSTM(units[i], return_sequences=return_seq, input_shape=input_shape if i == 0 else None))
             model.add(tf.keras.layers.Dropout(0.2))
     
-    for units in dense_units[:dense_layers]:
-        model.add(tf.keras.layers.Dense(units, activation='relu'))
-    model.add(tf.keras.layers.Dense(1))
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss='mse')
+    for unit in dense_units[:dense_layers]:
+        model.add(tf.keras.layers.Dense(unit, activation='relu'))
+    model.add(tf.keras.layers.Dense(1))  # Output shape: (batch_size, 1)
+    
+    if model_type == "PINN" or (model_type == "Hybrid" and "PINN" in st.session_state.hybrid_models):
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss=pinn_loss)
+    else:
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss='mse')
+    
     return model
 
 # -------------------- Styling and Streamlit UI --------------------
@@ -116,14 +147,14 @@ st.markdown("**Simple, Fast, and Accurate Predictions Powered by Neural Networks
 if 'model_type' not in st.session_state:
     st.session_state.model_type = "GRU"
 for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot', 'scaler', 'input_vars', 'output_var', 
-            'new_predictions_df', 'new_fig', 'gru_layers', 'lstm_layers', 'rnn_layers', 'gru_units', 'lstm_units', 
-            'rnn_units', 'dense_layers', 'dense_units', 'learning_rate', 'feature_cols', 'new_data_file', 
-            'selected_inputs', 'new_date_col', 'selected_metrics', 'var_types', 'new_var_types', 'num_lags', 
-            'date_col', 'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model', 'hybrid_models']:
+            'new_predictions_df', 'new_fig', 'gru_layers', 'lstm_layers', 'rnn_layers', 'pinn_layers', 'gru_units', 
+            'lstm_units', 'rnn_units', 'pinn_units', 'dense_layers', 'dense_units', 'learning_rate', 'feature_cols', 
+            'new_data_file', 'selected_inputs', 'new_date_col', 'selected_metrics', 'var_types', 'new_var_types', 
+            'num_lags', 'date_col', 'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model', 'hybrid_models']:
     if key not in st.session_state:
         if key == 'num_lags':
             st.session_state[key] = DEFAULT_NUM_LAGS
-        elif key in ['gru_layers', 'lstm_layers', 'rnn_layers', 'dense_layers']:
+        elif key in ['gru_layers', 'lstm_layers', 'rnn_layers', 'pinn_layers', 'dense_layers']:
             st.session_state[key] = 1
         elif key == 'gru_units':
             st.session_state[key] = [DEFAULT_GRU_UNITS]
@@ -131,6 +162,8 @@ for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot
             st.session_state[key] = [DEFAULT_LSTM_UNITS]
         elif key == 'rnn_units':
             st.session_state[key] = [DEFAULT_RNN_UNITS]
+        elif key == 'pinn_units':
+            st.session_state[key] = [DEFAULT_PINN_UNITS]
         elif key == 'dense_units':
             st.session_state[key] = [DEFAULT_DENSE_UNITS]
         elif key == 'learning_rate':
@@ -149,11 +182,13 @@ with st.sidebar:
     st.button("🔮 New Predictions", key="nav_predict")
     with st.expander("ℹ️ Help"):
         st.markdown("""
-        - **Layers**: Recurrent layers (GRU, LSTM, RNN) for time dependencies (1-5 recommended).
+        - **Layers**: Recurrent layers (GRU, LSTM, RNN, PINN) for time dependencies (1-5 recommended).
         - **Dense Layers**: Fully connected layers for output refinement.
         - **Dynamic Variables**: Use lagged values for time series modeling.
         - **Static Variables**: Constant features, no lags applied.
-        - **Metrics**: NSE/KGE ideal = 1, PBIAS ideal = 0.
+        - **Metrics**: NSE/KGE ideal = 1, RMSE/MAE ideal = 0.
+        - **PINN**: Enforces physical constraints (e.g., non-negativity).
+        - **Hybrid**: Combine any number of GRU, LSTM, RNN, PINN models.
         """)
 
 # Main Layout
@@ -162,7 +197,8 @@ col1, col2 = st.columns([2, 1], gap="large")
 # Left Column: Data and Variable Selection
 with col1:
     st.subheader("📥 Data Input", divider="blue")
-    uploaded_file = st.file_uploader("Upload Training Data (Excel)", type=["xlsx"], key="train_data", help="Excel file with time series data (e.g., dates, flows).")
+    uploaded_file = st.file_uploader("Upload Training Data (Excel)", type=["xlsx"], key="train_data", 
+                                    help="Excel file with time series data (e.g., dates, flows).")
     
     if uploaded_file:
         @st.cache_data
@@ -205,10 +241,12 @@ with col1:
             st.dataframe(df[numeric_cols].describe(), use_container_width=True)
             fig, ax = plt.subplots()
             df[numeric_cols].plot(ax=ax)
+            ax.set_title("Time Series Plot")
             st.pyplot(fig)
             st.markdown("**Correlation Heatmap**")
             fig, ax = plt.subplots()
             sns.heatmap(df[numeric_cols].corr(), annot=True, cmap="coolwarm", ax=ax)
+            ax.set_title("Correlation Matrix")
             st.pyplot(fig)
 
         st.session_state.input_vars = input_vars
@@ -226,43 +264,39 @@ with col2:
     if num_lags != st.session_state.num_lags:
         st.session_state.num_lags = num_lags
     
-    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10)
-    batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8)
-    train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT) / 100
+    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, key="epochs")
+    batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8, key="batch_size")
+    train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT, key="train_split") / 100
     
     with st.expander("Model Architecture", expanded=False):
         if model_type == "Hybrid":
             valid_options = ["GRU", "LSTM", "RNN", "PINN"]
-            # Ensure hybrid_models is initialized if None
-            if 'hybrid_models' not in st.session_state or st.session_state.hybrid_models is None:
+            if 'hybrid_models' not in st.session_state or not isinstance(st.session_state.hybrid_models, list):
                 st.session_state.hybrid_models = ["GRU"]
-            current_hybrid_models = st.session_state.hybrid_models
-            # Debug with type and raw value
-            st.write("Debug: Type of hybrid_models =", type(current_hybrid_models))
-            st.write("Debug: Raw hybrid_models =", current_hybrid_models)
-            # Sanitize to a plain list of valid strings
-            if not isinstance(current_hybrid_models, list):
-                current_hybrid_models = ["GRU"]
-            else:
-                # Convert each element to string and filter valid options
-                current_hybrid_models = [str(model) for model in current_hybrid_models if str(model) in valid_options]
-                if not current_hybrid_models:  # If empty after filtering
-                    current_hybrid_models = ["GRU"]
-            st.write("Debug: Sanitized hybrid_models =", current_hybrid_models)
-            
             hybrid_models = st.multiselect(
-                "Select Hybrid Models",
+                "Select Hybrid Models (1 to all)",
                 options=valid_options,
-                default=current_hybrid_models,
-                key="hybrid_models"
+                default=st.session_state.hybrid_models,
+                key="hybrid_models_select"
             )
-            # Update session state only if the selection changes and is valid
             if hybrid_models and hybrid_models != st.session_state.hybrid_models:
                 st.session_state.hybrid_models = hybrid_models
-            # If multiselect fails or returns empty, reset to default
             if not hybrid_models:
+                st.warning("Please select at least one hybrid model. Defaulting to GRU.")
                 st.session_state.hybrid_models = ["GRU"]
-                st.warning("Hybrid model selection reset to default due to an issue.")
+            hybrid_layers = st.number_input("Total Hybrid Layers", min_value=1, max_value=10, value=max(st.session_state.gru_layers, 1), 
+                                           step=1, key="hybrid_layers")
+            st.session_state.gru_layers = hybrid_layers
+            st.session_state.gru_units = [
+                st.number_input(
+                    f"Hybrid Layer {i+1} Units",
+                    min_value=8,
+                    max_value=512,
+                    value=st.session_state.gru_units[i] if i < len(st.session_state.gru_units) else DEFAULT_GRU_UNITS,
+                    step=8,
+                    key=f"hybrid_{i}"
+                ) for i in range(hybrid_layers)
+            ]
         elif model_type == "GRU":
             gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=st.session_state.gru_layers, step=1, key="gru_layers")
             if gru_layers != st.session_state.gru_layers:
@@ -305,6 +339,20 @@ with col2:
                     key=f"rnn_{i}"
                 ) for i in range(st.session_state.rnn_layers)
             ]
+        elif model_type == "PINN":
+            pinn_layers = st.number_input("PINN Layers", min_value=1, max_value=5, value=st.session_state.pinn_layers, step=1, key="pinn_layers")
+            if pinn_layers != st.session_state.pinn_layers:
+                st.session_state.pinn_layers = pinn_layers
+            st.session_state.pinn_units = [
+                st.number_input(
+                    f"PINN Layer {i+1} Units",
+                    min_value=8,
+                    max_value=512,
+                    value=st.session_state.pinn_units[i] if i < len(st.session_state.pinn_units) else DEFAULT_PINN_UNITS,
+                    step=8,
+                    key=f"pinn_{i}"
+                ) for i in range(st.session_state.pinn_layers)
+            ]
         
         dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=st.session_state.dense_layers, step=1, key="dense_layers")
         if dense_layers != st.session_state.dense_layers:
@@ -319,7 +367,8 @@ with col2:
                 key=f"dense_{i}"
             ) for i in range(st.session_state.dense_layers)
         ]
-        learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=st.session_state.learning_rate, format="%.5f", key="learning_rate")
+        learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=st.session_state.learning_rate, 
+                                        format="%.5f", key="learning_rate")
         if learning_rate != st.session_state.learning_rate:
             st.session_state.learning_rate = learning_rate
     
@@ -330,7 +379,7 @@ with col2:
     if uploaded_file:
         col_btn1, col_btn2, col_btn3 = st.columns(3)
         with col_btn1:
-            if st.button("🚀 Train Model"):
+            if st.button("🚀 Train Model", key="train_button"):
                 df = st.session_state.df.copy()
                 selected_cols = st.session_state.input_vars + [st.session_state.output_var]
                 if df[selected_cols].isnull().sum().sum() > 0:
@@ -365,13 +414,19 @@ with col2:
                 X_test, y_test = test_scaled[:, :-1], test_scaled[:, -1]
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
-                st.session_state.X_train = X_train
-                st.session_state.y_train = y_train
-                st.session_state.X_test = X_test
-                st.session_state.y_test = y_test
+                st.session_state.X_train, st.session_state.y_train = X_train, y_train
+                st.session_state.X_test, st.session_state.y_test = X_test, y_test
 
-                layers = st.session_state.gru_layers if model_type == "GRU" else st.session_state.lstm_layers if model_type == "LSTM" else st.session_state.rnn_layers
-                units = st.session_state.gru_units if model_type == "GRU" else st.session_state.lstm_units if model_type == "LSTM" else st.session_state.rnn_units
+                layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
+                          st.session_state.lstm_layers if model_type == "LSTM" else 
+                          st.session_state.rnn_layers if model_type == "RNN" else 
+                          st.session_state.pinn_layers if model_type == "PINN" else 
+                          st.session_state.gru_layers)
+                units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
+                         st.session_state.lstm_units if model_type == "LSTM" else 
+                         st.session_state.rnn_units if model_type == "RNN" else 
+                         st.session_state.pinn_units if model_type == "PINN" else 
+                         st.session_state.gru_units)
                 st.session_state.model = build_model(
                     (X_train.shape[1], X_train.shape[2]), 
                     model_type, 
@@ -386,20 +441,23 @@ with col2:
                 with st.spinner("Training in progress..."):
                     progress_placeholder = st.empty()
                     callback = StreamlitProgressCallback(epochs, progress_placeholder)
-                    st.session_state.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, callbacks=[callback, early_stopping, lr_scheduler])
+                    # Debugging: Print shapes before fitting
+                    st.write(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
+                    st.session_state.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1, 
+                                              callbacks=[callback, early_stopping, lr_scheduler])
                     st.session_state.model.save_weights(MODEL_WEIGHTS_PATH)
                     st.session_state.model.save(MODEL_FULL_PATH)
                 st.success("Model trained and saved successfully!")
         
         with col_btn2:
-            if st.button(f"🤖 Suggest {model_type} Units"):
+            if st.button(f"🤖 Suggest {model_type} Units", key="suggest_button"):
                 if "X_train" not in st.session_state or "y_train" not in st.session_state:
                     st.error("Please train the model first to generate training data.")
                 else:
-                    st.info(f"Suggested {model_type} Units: [64, 32] (Placeholder)")
-        
+                    st.info(f"Suggested {model_type} Units: [64, 32] (Placeholder - customize based on data size)")
+
         with col_btn3:
-            if st.button("🔍 Test Model"):
+            if st.button("🔍 Test Model", key="test_button"):
                 if not os.path.exists(MODEL_WEIGHTS_PATH):
                     st.error("Train the model first!")
                     st.stop()
@@ -428,8 +486,16 @@ with col2:
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
-                layers = st.session_state.gru_layers if model_type == "GRU" else st.session_state.lstm_layers if model_type == "LSTM" else st.session_state.rnn_layers
-                units = st.session_state.gru_units if model_type == "GRU" else st.session_state.lstm_units if model_type == "LSTM" else st.session_state.rnn_units
+                layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
+                          st.session_state.lstm_layers if model_type == "LSTM" else 
+                          st.session_state.rnn_layers if model_type == "RNN" else 
+                          st.session_state.pinn_layers if model_type == "PINN" else 
+                          st.session_state.gru_layers)
+                units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
+                         st.session_state.lstm_units if model_type == "LSTM" else 
+                         st.session_state.rnn_units if model_type == "RNN" else 
+                         st.session_state.pinn_units if model_type == "PINN" else 
+                         st.session_state.gru_units)
                 st.session_state.model = build_model(
                     (X_train.shape[1], X_train.shape[2]), 
                     model_type, 
@@ -479,7 +545,7 @@ with col2:
 # Cross-Validation Section
 if st.session_state.feature_cols:
     with st.expander("🔄 Cross-Validation", expanded=False):
-        if st.button("Run Cross-Validation"):
+        if st.button("Run Cross-Validation", key="cv_button"):
             df = st.session_state.df.copy()
             feature_cols = st.session_state.feature_cols
             num_lags = st.session_state.num_lags
@@ -504,8 +570,16 @@ if st.session_state.feature_cols:
             for train_idx, val_idx in tscv.split(X):
                 X_tr, X_val = X[train_idx], X[val_idx]
                 y_tr, y_val = y[train_idx], y[val_idx]
-                layers = st.session_state.gru_layers if model_type == "GRU" else st.session_state.lstm_layers if model_type == "LSTM" else st.session_state.rnn_layers
-                units = st.session_state.gru_units if model_type == "GRU" else st.session_state.lstm_units if model_type == "LSTM" else st.session_state.rnn_units
+                layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
+                          st.session_state.lstm_layers if model_type == "LSTM" else 
+                          st.session_state.rnn_layers if model_type == "RNN" else 
+                          st.session_state.pinn_layers if model_type == "PINN" else 
+                          st.session_state.gru_layers)
+                units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
+                         st.session_state.lstm_units if model_type == "LSTM" else 
+                         st.session_state.rnn_units if model_type == "RNN" else 
+                         st.session_state.pinn_units if model_type == "PINN" else 
+                         st.session_state.gru_units)
                 model = build_model(
                     (X_tr.shape[1], X_tr.shape[2]), 
                     model_type, 
@@ -550,6 +624,7 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
                 ax.plot(st.session_state.test_results_df["Date"], st.session_state.test_results_df[f"Actual_{st.session_state.output_var}"], label="Test Actual")
                 ax.plot(st.session_state.test_results_df["Date"], st.session_state.test_results_df[f"Predicted_{st.session_state.output_var}"], label="Test Predicted", linestyle="--")
                 ax.legend()
+                ax.set_title(f"Training and Testing: {st.session_state.output_var}")
                 fig.savefig(buf, format="png", bbox_inches="tight")
             st.download_button("⬇️ Download Plot", buf.getvalue(), "prediction_plot.png", "image/png", key="plot_dl")
         
@@ -560,7 +635,7 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
             test_csv = st.session_state.test_results_df.to_csv(index=False)
             st.download_button("⬇️ Download Test Data CSV", test_csv, "test_predictions.csv", "text/csv", key="test_dl")
         
-        if st.button("🗺️ Show Model Architecture"):
+        if st.button("🗺️ Show Model Architecture", key="arch_button"):
             if st.session_state.model is None:
                 st.error("No model available. Please train or test a model first.")
             else:
@@ -580,7 +655,8 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 st.dataframe(new_df.head(), use_container_width=True)
                 
                 datetime_cols = [col for col in new_df.columns if pd.api.types.is_datetime64_any_dtype(new_df[col]) or "date" in col.lower()]
-                date_col = st.selectbox(f"Select Date Column ({new_data_file.name})", ["None"] + datetime_cols, index=0, key=f"date_col_new_{new_data_file.name}")
+                date_col = st.selectbox(f"Select Date Column ({new_data_file.name})", ["None"] + datetime_cols, index=0, 
+                                        key=f"date_col_new_{new_data_file.name}")
                 if date_col != "None":
                     new_df[date_col] = pd.to_datetime(new_df[date_col])
                     new_df = new_df.sort_values(date_col)
@@ -594,14 +670,15 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 if not available_new_inputs:
                     st.error(f"No recognized input variables in {new_data_file.name}. Include: " + ", ".join(input_vars))
                     continue
-                selected_inputs = st.multiselect(f"🔧 Input Variables ({new_data_file.name})", available_new_inputs, default=available_new_inputs, key=f"new_input_vars_{new_data_file.name}")
+                selected_inputs = st.multiselect(f"🔧 Input Variables ({new_data_file.name})", available_new_inputs, 
+                                                default=available_new_inputs, key=f"new_input_vars_{new_data_file.name}")
                 
                 st.markdown(f"**Variable Types ({new_data_file.name})**")
                 new_var_types = {}
                 for var in selected_inputs:
                     new_var_types[var] = st.selectbox(f"{var} Type", ["Dynamic", "Static"], key=f"new_{var}_type_{new_data_file.name}")
                 
-                if st.button(f"🔍 Predict ({new_data_file.name})"):
+                if st.button(f"🔍 Predict ({new_data_file.name})", key=f"predict_button_{new_data_file.name}"):
                     if len(new_df) < (num_lags + 1 if any(new_var_types[var] == "Dynamic" for var in selected_inputs) else 1):
                         st.error(f"{new_data_file.name} has insufficient rows for {num_lags} lags.")
                         continue
@@ -632,8 +709,16 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     X_new = new_scaled[:, :-1]
                     X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
                     
-                    layers = st.session_state.gru_layers if model_type == "GRU" else st.session_state.lstm_layers if model_type == "LSTM" else st.session_state.rnn_layers
-                    units = st.session_state.gru_units if model_type == "GRU" else st.session_state.lstm_units if model_type == "LSTM" else st.session_state.rnn_units
+                    layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
+                              st.session_state.lstm_layers if model_type == "LSTM" else 
+                              st.session_state.rnn_layers if model_type == "RNN" else 
+                              st.session_state.pinn_layers if model_type == "PINN" else 
+                              st.session_state.gru_layers)
+                    units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
+                             st.session_state.lstm_units if model_type == "LSTM" else 
+                             st.session_state.rnn_units if model_type == "RNN" else 
+                             st.session_state.pinn_units if model_type == "PINN" else 
+                             st.session_state.gru_units)
                     if st.session_state.model is None:
                         st.session_state.model = build_model(
                             (X_new.shape[1], X_new.shape[2]), 
@@ -667,6 +752,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         fig_alt, ax = plt.subplots()
                         ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Predicted")
                         ax.legend()
+                        ax.set_title(f"New Predictions: {output_var}")
                         fig_alt.savefig(buf, format="png", bbox_inches="tight")
                     st.download_button(f"⬇️ Download Plot ({new_data_file.name})", buf.getvalue(), f"new_prediction_{new_data_file.name}.png", "image/png")
                     new_csv = new_predictions_df.to_csv(index=False)
