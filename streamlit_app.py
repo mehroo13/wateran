@@ -136,7 +136,7 @@ for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot
         elif key == 'learning_rate':
             st.session_state[key] = DEFAULT_LEARNING_RATE
         elif key == 'hybrid_models':
-            st.session_state[key] = ["GRU"]  # Default value for hybrid_models
+            st.session_state[key] = ["GRU"]
         else:
             st.session_state[key] = None
 
@@ -231,6 +231,8 @@ with col2:
     
     with st.expander("Model Architecture", expanded=False):
         if model_type == "Hybrid":
+            if st.session_state.hybrid_models is None:
+                st.session_state.hybrid_models = ["GRU"]
             hybrid_models = st.multiselect("Select Hybrid Models", ["GRU", "LSTM", "RNN", "PINN"], default=st.session_state.hybrid_models, key="hybrid_models")
             if hybrid_models != st.session_state.hybrid_models:
                 st.session_state.hybrid_models = hybrid_models
