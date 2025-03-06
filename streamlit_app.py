@@ -408,7 +408,6 @@ with col2:
                 with st.spinner("Training in progress..."):
                     progress_placeholder = st.empty()
                     callback = StreamlitProgressCallback(epochs, progress_placeholder)
-                    st.write(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
                     try:
                         st.session_state.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1, 
                                                   callbacks=[callback, early_stopping, lr_scheduler])
