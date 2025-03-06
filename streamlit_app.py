@@ -79,7 +79,6 @@ def pinn_loss(y_true, y_pred):
     return mse_loss + 0.1 * physics_loss
 
 # -------------------- Model Definition --------------------
-@st.cache_resource
 def build_model(input_shape, model_type, layers, units, dense_layers, dense_units, learning_rate):
     model = tf.keras.Sequential()
     
@@ -418,7 +417,7 @@ with col2:
                 X_test, y_test = test_scaled[:, :-1], test_scaled[:, -1]
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
-                y_train = y_train.reshape(-1, 1)  # Reshape to match model output (batch_size, 1)
+                y_train = y_train.reshape(-1, 1)
                 y_test = y_test.reshape(-1, 1)
                 st.session_state.X_train, st.session_state.y_train = X_train, y_train
                 st.session_state.X_test, st.session_state.y_test = X_test, y_test
@@ -448,11 +447,14 @@ with col2:
                     progress_placeholder = st.empty()
                     callback = StreamlitProgressCallback(epochs, progress_placeholder)
                     st.write(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
-                    st.session_state.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1, 
-                                              callbacks=[callback, early_stopping, lr_scheduler])
-                    st.session_state.model.save_weights(MODEL_WEIGHTS_PATH)
-                    st.session_state.model.save(MODEL_FULL_PATH)
-                st.success("Model trained and saved successfully!")
+                    try:
+                        st.session_state.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1, 
+                                                  callbacks=[callback, early_stopping, lr_scheduler])
+                        st.session_state.model.save_weights(MODEL_WEIGHTS_PATH)
+                        st.session_state.model.save(MODEL_FULL_PATH)
+                        st.success("Model trained and saved successfully!")
+                    except Exception as e:
+                        st.error(f"Training failed with error: {str(e)}")
         
         with col_btn2:
             if st.button(f"🤖 Suggest {model_type} Units", key="suggest_button"):
