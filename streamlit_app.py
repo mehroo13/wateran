@@ -13,17 +13,6 @@ from io import BytesIO
 from tensorflow.keras.utils import plot_model
 import plotly.graph_objects as go
 
-# -------------------- Set Page Config (Must be First Streamlit Command) --------------------
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
-
-# -------------------- AdSense Verification Script --------------------
-# This is the AdSense script provided by Google for your account
-adsense_code = """
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289"
-     crossorigin="anonymous"></script>
-"""
-st.markdown(adsense_code, unsafe_allow_html=True)
-
 # -------------------- Model Parameters --------------------
 DEFAULT_GRU_UNITS = 64
 DEFAULT_LSTM_UNITS = 64
@@ -124,7 +113,8 @@ def build_model(input_shape, model_type, layers, units, dense_layers, dense_unit
     
     return model
 
-# -------------------- Styling --------------------
+# -------------------- Styling and Streamlit UI --------------------
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 st.markdown("""
     <style>
     .main { background-color: #f0f4f8; padding: 20px; border-radius: 10px; }
@@ -733,6 +723,3 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     new_csv = new_predictions_df.to_csv(index=False)
                     st.download_button(f"⬇️ Download CSV ({new_data_file.name})", new_csv, f"new_predictions_{new_data_file.name}.csv", "text/csv")
                     st.success(f"Predictions for {new_data_file.name} generated successfully!")
-
-# -------------------- Ad Placeholder (Example) --------------------
-st.markdown("<div style='text-align:center; padding:20px; background-color:#f0f0f0;'>[Ad Banner Placeholder]</div>", unsafe_allow_html=True)
