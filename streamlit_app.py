@@ -13,6 +13,15 @@ from io import BytesIO
 from tensorflow.keras.utils import plot_model
 import plotly.graph_objects as go
 
+# -------------------- Set Page Config (Must be First Streamlit Command) --------------------
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+
+# -------------------- AdSense Meta Tag for Verification --------------------
+adsense_meta_tag = """
+<meta name="google-adsense-account" content="ca-pub-2264561932019289">
+"""
+st.markdown(adsense_meta_tag, unsafe_allow_html=True)
+
 # -------------------- Model Parameters --------------------
 DEFAULT_GRU_UNITS = 64
 DEFAULT_LSTM_UNITS = 64
@@ -113,8 +122,7 @@ def build_model(input_shape, model_type, layers, units, dense_layers, dense_unit
     
     return model
 
-# -------------------- Styling and Streamlit UI --------------------
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+# -------------------- Styling --------------------
 st.markdown("""
     <style>
     .main { background-color: #f0f4f8; padding: 20px; border-radius: 10px; }
