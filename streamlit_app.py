@@ -13,6 +13,13 @@ from io import BytesIO
 from tensorflow.keras.utils import plot_model
 import plotly.graph_objects as go
 
+# -------------------- AdSense Integration --------------------
+adsense_code = """
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289"
+     crossorigin="anonymous"></script>
+"""
+st.markdown(adsense_code, unsafe_allow_html=True)
+
 # -------------------- Model Parameters --------------------
 DEFAULT_GRU_UNITS = 64
 DEFAULT_LSTM_UNITS = 64
@@ -723,3 +730,6 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     new_csv = new_predictions_df.to_csv(index=False)
                     st.download_button(f"⬇️ Download CSV ({new_data_file.name})", new_csv, f"new_predictions_{new_data_file.name}.csv", "text/csv")
                     st.success(f"Predictions for {new_data_file.name} generated successfully!")
+
+# -------------------- Ad Placeholder (Example) --------------------
+st.markdown("<div style='text-align:center; padding:20px; background-color:#f0f0f0;'>[Ad Banner Placeholder]</div>", unsafe_allow_html=True)
