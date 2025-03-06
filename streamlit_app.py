@@ -66,14 +66,14 @@ class StreamlitProgressCallback(tf.keras.callbacks.Callback):
 
 class ShapeDebugCallback(tf.keras.callbacks.Callback):
     def on_train_batch_begin(self, batch, logs=None):
-        # Access the current batch's y_true and y_pred
         pass  # We'll log shapes via loss function instead
 
 # -------------------- Physics-Informed Loss (PINN) --------------------
 def pinn_loss(y_true, y_pred):
-    # Ensure shapes match by squeezing y_pred to (batch_size,)
-    y_true = tf.squeeze(y_true)  # Remove any extra dimensions
-    y_pred = tf.squeeze(y_pred)  # Remove extra dimensions (e.g., from (batch_size, 1) to (batch_size,))
+    y_true = tf.convert_to_tensor(y_true, dtype=tf.float32)
+    y_pred = tf.convert_to_tensor(y_pred, dtype=tf.float32)
+    y_true = tf.squeeze(y_true)
+    y_pred = tf.squeeze(y_pred)
     mse_loss = tf.keras.losses.mean_squared_error(y_true, y_pred)
     physics_loss = tf.reduce_mean(tf.square(tf.nn.relu(-y_pred)))  # Penalize negative predictions
     return mse_loss + 0.1 * physics_loss
@@ -418,6 +418,8 @@ with col2:
                 X_test, y_test = test_scaled[:, :-1], test_scaled[:, -1]
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
+                y_train = y_train.reshape(-1, 1)  # Reshape to match model output (batch_size, 1)
+                y_test = y_test.reshape(-1, 1)
                 st.session_state.X_train, st.session_state.y_train = X_train, y_train
                 st.session_state.X_test, st.session_state.y_test = X_test, y_test
 
@@ -488,6 +490,8 @@ with col2:
                 X_test, y_test = test_scaled[:, :-1], test_scaled[:, -1]
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
+                y_train = y_train.reshape(-1, 1)
+                y_test = y_test.reshape(-1, 1)
 
                 layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
                           st.session_state.lstm_layers if model_type == "LSTM" else 
@@ -513,8 +517,8 @@ with col2:
                 y_test_pred = st.session_state.model.predict(X_test)
                 y_train_pred = scaler.inverse_transform(np.hstack([y_train_pred, X_train[:, 0, :]]))[:, 0]
                 y_test_pred = scaler.inverse_transform(np.hstack([y_test_pred, X_test[:, 0, :]]))[:, 0]
-                y_train_actual = scaler.inverse_transform(np.hstack([y_train.reshape(-1, 1), X_train[:, 0, :]]))[:, 0]
-                y_test_actual = scaler.inverse_transform(np.hstack([y_test.reshape(-1, 1), X_test[:, 0, :]]))[:, 0]
+                y_train_actual = scaler.inverse_transform(np.hstack([y_train, X_train[:, 0, :]]))[:, 0]
+                y_test_actual = scaler.inverse_transform(np.hstack([y_test, X_test[:, 0, :]]))[:, 0]
                 y_train_pred, y_test_pred = np.clip(y_train_pred, 0, None), np.clip(y_test_pred, 0, None)
 
                 metrics = {metric: {
@@ -567,6 +571,7 @@ if st.session_state.feature_cols:
             scaled = scaler.transform(df[feature_cols + [st.session_state.output_var]])
             X, y = scaled[:, :-1], scaled[:, -1]
             X = X.reshape((X.shape[0], 1, X.shape[1]))
+            y = y.reshape(-1, 1)
 
             tscv = TimeSeriesSplit(n_splits=5)
             cv_metrics = {metric: [] for metric in st.session_state.selected_metrics}
@@ -595,7 +600,7 @@ if st.session_state.feature_cols:
                 model.fit(X_tr, y_tr, epochs=epochs, batch_size=batch_size, verbose=0)
                 y_val_pred = model.predict(X_val)
                 y_val_pred = scaler.inverse_transform(np.hstack([y_val_pred, X_val[:, 0, :]]))[:, 0]
-                y_val_actual = scaler.inverse_transform(np.hstack([y_val.reshape(-1, 1), X_val[:, 0, :]]))[:, 0]
+                y_val_actual = scaler.inverse_transform(np.hstack([y_val, X_val[:, 0, :]]))[:, 0]
                 for metric in st.session_state.selected_metrics:
                     cv_metrics[metric].append(all_metrics_dict[metric](y_val_actual, y_val_pred))
             st.session_state.cv_metrics = {m: np.mean(cv_metrics[m]) for m in st.session_state.selected_metrics}
