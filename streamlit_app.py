@@ -13,10 +13,11 @@ from io import BytesIO
 from tensorflow.keras.utils import plot_model
 import plotly.graph_objects as go
 
-# -------------------- Set Page Config (Must be First) --------------------
+# -------------------- Set Page Config (Must be First Streamlit Command) --------------------
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
-# -------------------- AdSense Integration --------------------
+# -------------------- AdSense Verification Script --------------------
+# This is the AdSense script provided by Google for your account
 adsense_code = """
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289"
      crossorigin="anonymous"></script>
@@ -474,7 +475,7 @@ with col2:
                          st.session_state.rnn_units if model_type == "RNN" else 
                          st.session_state.gru_units)
                 st.session_state.model = build_model(
-                    (X_train.shape[1], X_train.shape[1]), 
+                    (X_train.shape[1], X_train.shape[2]), 
                     model_type, 
                     layers, 
                     units, 
