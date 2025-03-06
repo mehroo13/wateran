@@ -64,11 +64,16 @@ class StreamlitProgressCallback(tf.keras.callbacks.Callback):
         self.progress_placeholder.progress(min(progress, 1.0))
         self.progress_placeholder.text(f"Epoch {self.current_epoch}/{self.total_epochs} completed")
 
+class ShapeDebugCallback(tf.keras.callbacks.Callback):
+    def on_train_batch_begin(self, batch, logs=None):
+        # Access the current batch's y_true and y_pred
+        pass  # We'll log shapes via loss function instead
+
 # -------------------- Physics-Informed Loss (PINN) --------------------
 def pinn_loss(y_true, y_pred):
-    # Reshape y_pred to match y_true's shape (batch_size,)
-    y_pred = tf.reshape(y_pred, [-1])  # Flatten to (batch_size,)
-    y_true = tf.reshape(y_true, [-1])  # Ensure y_true is (batch_size,)
+    # Ensure shapes match by squeezing y_pred to (batch_size,)
+    y_true = tf.squeeze(y_true)  # Remove any extra dimensions
+    y_pred = tf.squeeze(y_pred)  # Remove extra dimensions (e.g., from (batch_size, 1) to (batch_size,))
     mse_loss = tf.keras.losses.mean_squared_error(y_true, y_pred)
     physics_loss = tf.reduce_mean(tf.square(tf.nn.relu(-y_pred)))  # Penalize negative predictions
     return mse_loss + 0.1 * physics_loss
