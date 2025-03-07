@@ -215,8 +215,10 @@ with col2:
     st.session_state.model_type = model_type
     
     st.markdown("**Training Parameters**")
-    # Use session state directly in the widget to avoid reassignment issues
-    st.session_state.num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags")
+    # Capture num_lags from widget without immediate reassignment
+    num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags_input")
+    if num_lags != st.session_state.num_lags:  # Update only if changed
+        st.session_state.num_lags = num_lags
     
     epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, key="epochs")
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8, key="batch_size")
