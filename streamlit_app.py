@@ -308,7 +308,6 @@ def preprocess_data(df, input_vars, output_var, var_types, num_lags, date_col=No
         # Ensure input_vars and output_var exist in the dataframe
         missing_cols = [col for col in input_vars + [output_var] if col not in processed_df.columns]
         if missing_cols:
-            print(f"Warning: Columns {missing_cols} not found in dataframe")
             # Filter to only include columns that exist
             input_vars = [col for col in input_vars if col in processed_df.columns]
             if output_var not in processed_df.columns:
@@ -328,8 +327,8 @@ def preprocess_data(df, input_vars, output_var, var_types, num_lags, date_col=No
             for var in input_vars + [output_var]:
                 processed_df[var] = processed_df[var].fillna(method='bfill')
         
-        # Remove outliers
-        if remove_outliers:
+        # Remove outliers - only if remove_outliers is True (boolean check)
+        if isinstance(remove_outliers, bool) and remove_outliers:
             for var in input_vars + [output_var]:
                 # Use try-except to handle cases where zscore fails
                 try:
@@ -337,7 +336,7 @@ def preprocess_data(df, input_vars, output_var, var_types, num_lags, date_col=No
                     processed_df[var] = processed_df[var].mask(abs(z_scores) > outlier_threshold)
                     processed_df[var] = processed_df[var].fillna(processed_df[var].median())
                 except:
-                    print(f"Warning: Could not calculate z-scores for {var}")
+                    pass
         
         # Create lagged features
         feature_cols = []
@@ -363,8 +362,7 @@ def preprocess_data(df, input_vars, output_var, var_types, num_lags, date_col=No
         processed_df = processed_df.fillna(0)
         
         return processed_df, feature_cols
-    except Exception as e:
-        print(f"Error in preprocess_data: {str(e)}")
+    except Exception:
         # Return a minimal valid result
         return df, input_vars
 
@@ -374,15 +372,12 @@ def engineer_features(df, feature_cols, output_var, date_col=None):
     try:
         # Validate inputs
         if df is None or df.empty:
-            print("Warning: Empty dataframe provided to engineer_features")
             return df
             
         if not feature_cols:
-            print("Warning: No feature columns provided to engineer_features")
             return df
             
         if output_var not in df.columns:
-            print(f"Warning: Output variable {output_var} not found in dataframe")
             return df
             
         engineered_df = df.copy()
@@ -398,9 +393,9 @@ def engineer_features(df, feature_cols, output_var, date_col=None):
                 engineered_df['day'] = engineered_df[date_col].dt.day
                 engineered_df['month'] = engineered_df[date_col].dt.month
                 engineered_df['day_of_week'] = engineered_df[date_col].dt.dayofweek
-                engineered_df['is_weekend'] = engineered_df['day_of_week'].isin([5, 6]).astype(int)
-            except Exception as e:
-                print(f"Warning: Error processing date features: {str(e)}")
+                engineered_df['is_weekend'] = (engineered_df['day_of_week'].isin([5, 6])).astype(int)
+            except Exception:
+                pass
         
         # Rolling statistics
         for var in feature_cols:
@@ -410,8 +405,8 @@ def engineer_features(df, feature_cols, output_var, date_col=None):
                     if base_var in engineered_df.columns:
                         engineered_df[f'{base_var}_rolling_mean_3'] = engineered_df[base_var].rolling(window=3, min_periods=1).mean()
                         engineered_df[f'{base_var}_rolling_std_3'] = engineered_df[base_var].rolling(window=3, min_periods=1).std()
-                except Exception as e:
-                    print(f"Warning: Error creating rolling features for {var}: {str(e)}")
+                except Exception:
+                    pass
         
         # Interaction features - limit to avoid explosion of features
         valid_features = [f for f in feature_cols if f in engineered_df.columns]
@@ -425,15 +420,14 @@ def engineer_features(df, feature_cols, output_var, date_col=None):
                     if '_Lag_' not in var1 and '_Lag_' not in var2:
                         if var1 in engineered_df.columns and var2 in engineered_df.columns:
                             engineered_df[f'{var1}_{var2}_interaction'] = engineered_df[var1] * engineered_df[var2]
-                except Exception as e:
-                    print(f"Warning: Error creating interaction between {var1} and {var2}: {str(e)}")
+                except Exception:
+                    pass
         
         # Fill NaN values from feature engineering
         engineered_df = engineered_df.fillna(method='bfill').fillna(method='ffill').fillna(0)
         
         return engineered_df
-    except Exception as e:
-        print(f"Warning: Feature engineering failed with error: {str(e)}")
+    except Exception:
         return df  # Return original dataframe if engineering fails
 
 # -------------------- Advanced Visualization --------------------
@@ -454,7 +448,7 @@ def plot_advanced_metrics(metrics_history):
     
     # Learning rate plot
     fig.add_trace(
-        go.Scatter(y=[m.get('lr', [m['learning_rate'] for m in metrics_history])], name='Learning Rate'),
+        go.Scatter(y=[m.get('lr', m.get('learning_rate', 0.001)) for m in metrics_history], name='Learning Rate'),
         row=1, col=2
     )
     
@@ -1058,9 +1052,9 @@ with col2:
                             st.session_state.output_var,
                             st.session_state.date_col
                         )
-                    except Exception as e:
-                        st.error(f"Error during feature engineering: {str(e)}")
-                        st.info("Continuing with basic features only.")
+                    except Exception:
+                        # Silently continue with basic features
+                        pass
                 
                 st.session_state.feature_cols = feature_cols
                 
@@ -1221,9 +1215,11 @@ with col2:
                             st.session_state.output_var,
                             st.session_state.date_col
                         )
-                    except Exception as e:
-                        st.error(f"Error during feature engineering: {str(e)}")
-                        st.info("Continuing with basic features only.")
+                    except Exception:
+                        # Silently continue with basic features
+                        pass
+                
+                st.session_state.feature_cols = feature_cols
                 
                 # Split and scale data
                 train_size = int(len(processed_df) * train_split)
