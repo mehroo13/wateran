@@ -121,14 +121,14 @@ st.markdown("**Simple, Fast, and Accurate Predictions Powered by Neural Networks
 # Initialize session state
 if 'model_type' not in st.session_state:
     st.session_state.model_type = "GRU"
+if 'num_lags' not in st.session_state:
+    st.session_state.num_lags = DEFAULT_NUM_LAGS
 for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'scaler', 'input_vars', 'output_var', 
             'gru_layers', 'lstm_layers', 'rnn_layers', 'gru_units', 'lstm_units', 'rnn_units', 'dense_layers', 
-            'dense_units', 'learning_rate', 'feature_cols', 'selected_metrics', 'var_types', 'num_lags', 'date_col', 
+            'dense_units', 'learning_rate', 'feature_cols', 'selected_metrics', 'var_types', 'date_col', 
             'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model', 'hybrid_models']:
     if key not in st.session_state:
-        if key == 'num_lags':
-            st.session_state[key] = DEFAULT_NUM_LAGS
-        elif key in ['gru_layers', 'lstm_layers', 'rnn_layers', 'dense_layers']:
+        if key in ['gru_layers', 'lstm_layers', 'rnn_layers', 'dense_layers']:
             st.session_state[key] = 1
         elif key == 'gru_units':
             st.session_state[key] = [DEFAULT_GRU_UNITS]
@@ -215,8 +215,8 @@ with col2:
     st.session_state.model_type = model_type
     
     st.markdown("**Training Parameters**")
-    num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags")
-    st.session_state.num_lags = num_lags
+    # Use session state directly in the widget to avoid reassignment issues
+    st.session_state.num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags")
     
     epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, key="epochs")
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8, key="batch_size")
@@ -253,6 +253,7 @@ with col2:
             if st.button("🚀 Train Model", key="train_button"):
                 df = st.session_state.df.copy()
                 feature_cols = []
+                num_lags = st.session_state.num_lags
                 for var in st.session_state.input_vars:
                     if st.session_state.var_types[var] == "Dynamic":
                         for lag in range(1, num_lags + 1):
@@ -316,6 +317,7 @@ with col2:
                     st.stop()
                 df = st.session_state.df.copy()
                 feature_cols = st.session_state.feature_cols
+                num_lags = st.session_state.num_lags
                 for var in st.session_state.input_vars:
                     if st.session_state.var_types[var] == "Dynamic":
                         for lag in range(1, num_lags + 1):
@@ -456,7 +458,6 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         st.error(f"{new_data_file.name} has insufficient rows ({len(new_df)}) for {num_lags} lags.")
                         continue
                     
-                    # Preprocess new data consistently
                     new_df_processed = new_df.copy()
                     feature_cols_new = []
                     for var in selected_inputs:
@@ -470,7 +471,6 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         new_df_processed[f'{output_var}_Lag_{lag}'] = new_df_processed[output_var].shift(lag) if output_var in new_df_processed.columns else np.nan
                         feature_cols_new.append(f'{output_var}_Lag_{lag}')
                     
-                    # Ensure all feature columns are present
                     full_new_df = pd.DataFrame(index=new_df_processed.index, columns=feature_cols + [output_var])
                     for col in feature_cols:
                         if col in new_df_processed.columns:
@@ -524,9 +524,9 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         fig.write_image(buf, format="png")
                     except ValueError:
                         fig_alt, ax = plt.subplots()
-                        ax.plot(valid_dates, y_new_pred, label="Predicted")
+                        ax.plot(valid_dates, y=y_new_pred, label="Predicted")
                         if output_var in new_df.columns:
-                            ax.plot(valid_dates, new_df[output_var][valid_indices][-len(y_new_pred):], label="Actual")
+                            ax.plot(valid_dates, y=new_df[output_var][valid_indices][-len(y_new_pred):], label="Actual")
                         ax.legend()
                         ax.set_title(f"New Predictions: {output_var}")
                         fig_alt.savefig(buf, format="png", bbox_inches="tight")
