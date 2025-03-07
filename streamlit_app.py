@@ -123,14 +123,20 @@ if 'model_type' not in st.session_state:
     st.session_state.model_type = "GRU"
 if 'num_lags' not in st.session_state:
     st.session_state.num_lags = DEFAULT_NUM_LAGS
+if 'gru_layers' not in st.session_state:
+    st.session_state.gru_layers = 1
+if 'lstm_layers' not in st.session_state:
+    st.session_state.lstm_layers = 1
+if 'rnn_layers' not in st.session_state:
+    st.session_state.rnn_layers = 1
+if 'dense_layers' not in st.session_state:
+    st.session_state.dense_layers = 1
 for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'scaler', 'input_vars', 'output_var', 
-            'gru_layers', 'lstm_layers', 'rnn_layers', 'gru_units', 'lstm_units', 'rnn_units', 'dense_layers', 
-            'dense_units', 'learning_rate', 'feature_cols', 'selected_metrics', 'var_types', 'date_col', 
-            'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model', 'hybrid_models']:
+            'gru_units', 'lstm_units', 'rnn_units', 'dense_units', 'learning_rate', 'feature_cols', 
+            'selected_metrics', 'var_types', 'date_col', 'df', 'cv_metrics', 'X_train', 'y_train', 
+            'X_test', 'y_test', 'model', 'hybrid_models']:
     if key not in st.session_state:
-        if key in ['gru_layers', 'lstm_layers', 'rnn_layers', 'dense_layers']:
-            st.session_state[key] = 1
-        elif key == 'gru_units':
+        if key == 'gru_units':
             st.session_state[key] = [DEFAULT_GRU_UNITS]
         elif key == 'lstm_units':
             st.session_state[key] = [DEFAULT_LSTM_UNITS]
@@ -215,9 +221,8 @@ with col2:
     st.session_state.model_type = model_type
     
     st.markdown("**Training Parameters**")
-    # Capture num_lags from widget without immediate reassignment
     num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1, key="num_lags_input")
-    if num_lags != st.session_state.num_lags:  # Update only if changed
+    if num_lags != st.session_state.num_lags:
         st.session_state.num_lags = num_lags
     
     epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, key="epochs")
@@ -229,21 +234,24 @@ with col2:
             hybrid_models = st.multiselect("Select Hybrid Models", ["GRU", "LSTM", "RNN"], default=st.session_state.hybrid_models, key="hybrid_models_select")
             st.session_state.hybrid_models = hybrid_models if hybrid_models else ["GRU"]
             hybrid_layers = st.number_input("Total Hybrid Layers", min_value=1, max_value=10, value=st.session_state.gru_layers, step=1, key="hybrid_layers")
-            st.session_state.gru_layers = hybrid_layers
             st.session_state.gru_units = [st.number_input(f"Hybrid Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"hybrid_{i}") for i in range(hybrid_layers)]
+            layers = hybrid_layers  # Use directly in model building
         elif model_type == "GRU":
-            st.session_state.gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=st.session_state.gru_layers, step=1, key="gru_layers")
-            st.session_state.gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}") for i in range(st.session_state.gru_layers)]
+            gru_layers = st.number_input("GRU Layers", min_value=1, max_value=5, value=st.session_state.gru_layers, step=1, key="gru_layers")
+            st.session_state.gru_units = [st.number_input(f"GRU Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_GRU_UNITS, step=8, key=f"gru_{i}") for i in range(gru_layers)]
+            layers = gru_layers  # Use directly in model building
         elif model_type == "LSTM":
-            st.session_state.lstm_layers = st.number_input("LSTM Layers", min_value=1, max_value=5, value=st.session_state.lstm_layers, step=1, key="lstm_layers")
-            st.session_state.lstm_units = [st.number_input(f"LSTM Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_LSTM_UNITS, step=8, key=f"lstm_{i}") for i in range(st.session_state.lstm_layers)]
+            lstm_layers = st.number_input("LSTM Layers", min_value=1, max_value=5, value=st.session_state.lstm_layers, step=1, key="lstm_layers")
+            st.session_state.lstm_units = [st.number_input(f"LSTM Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_LSTM_UNITS, step=8, key=f"lstm_{i}") for i in range(lstm_layers)]
+            layers = lstm_layers  # Use directly in model building
         elif model_type == "RNN":
-            st.session_state.rnn_layers = st.number_input("RNN Layers", min_value=1, max_value=5, value=st.session_state.rnn_layers, step=1, key="rnn_layers")
-            st.session_state.rnn_units = [st.number_input(f"RNN Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_RNN_UNITS, step=8, key=f"rnn_{i}") for i in range(st.session_state.rnn_layers)]
+            rnn_layers = st.number_input("RNN Layers", min_value=1, max_value=5, value=st.session_state.rnn_layers, step=1, key="rnn_layers")
+            st.session_state.rnn_units = [st.number_input(f"RNN Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_RNN_UNITS, step=8, key=f"rnn_{i}") for i in range(rnn_layers)]
+            layers = rnn_layers  # Use directly in model building
         
-        st.session_state.dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=st.session_state.dense_layers, step=1, key="dense_layers")
-        st.session_state.dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(st.session_state.dense_layers)]
-        st.session_state.learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=st.session_state.learning_rate, format="%.5f", key="learning_rate")
+        dense_layers = st.number_input("Dense Layers", min_value=1, max_value=5, value=st.session_state.dense_layers, step=1, key="dense_layers")
+        st.session_state.dense_units = [st.number_input(f"Dense Layer {i+1} Units", min_value=8, max_value=512, value=DEFAULT_DENSE_UNITS, step=8, key=f"dense_{i}") for i in range(dense_layers)]
+        learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.1, value=st.session_state.learning_rate, format="%.5f", key="learning_rate")
     
     st.markdown("**Evaluation Metrics**")
     all_metrics = ["RMSE", "MAE", "R²", "NSE", "KGE"]
@@ -255,7 +263,6 @@ with col2:
             if st.button("🚀 Train Model", key="train_button"):
                 df = st.session_state.df.copy()
                 feature_cols = []
-                num_lags = st.session_state.num_lags
                 for var in st.session_state.input_vars:
                     if st.session_state.var_types[var] == "Dynamic":
                         for lag in range(1, num_lags + 1):
@@ -284,15 +291,12 @@ with col2:
                 st.session_state.X_train, st.session_state.y_train = X_train, y_train
                 st.session_state.X_test, st.session_state.y_test = X_test, y_test
 
-                layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
-                          st.session_state.lstm_layers if model_type == "LSTM" else 
-                          st.session_state.rnn_layers)
                 units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
                          st.session_state.lstm_units if model_type == "LSTM" else 
                          st.session_state.rnn_units)
                 st.session_state.model = build_model(
                     (X_train.shape[1], X_train.shape[2]), model_type, layers, units, 
-                    st.session_state.dense_layers, st.session_state.dense_units, st.session_state.learning_rate
+                    dense_layers, st.session_state.dense_units, learning_rate
                 )
                 early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
                 lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5)
@@ -319,7 +323,6 @@ with col2:
                     st.stop()
                 df = st.session_state.df.copy()
                 feature_cols = st.session_state.feature_cols
-                num_lags = st.session_state.num_lags
                 for var in st.session_state.input_vars:
                     if st.session_state.var_types[var] == "Dynamic":
                         for lag in range(1, num_lags + 1):
@@ -341,15 +344,12 @@ with col2:
                 X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
                 X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
 
-                layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
-                          st.session_state.lstm_layers if model_type == "LSTM" else 
-                          st.session_state.rnn_layers)
                 units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
                          st.session_state.lstm_units if model_type == "LSTM" else 
                          st.session_state.rnn_units)
                 st.session_state.model = build_model(
                     (X_train.shape[1], X_train.shape[2]), model_type, layers, units, 
-                    st.session_state.dense_layers, st.session_state.dense_units, st.session_state.learning_rate
+                    dense_layers, st.session_state.dense_units, learning_rate
                 )
                 st.session_state.model.load_weights(MODEL_WEIGHTS_PATH)
                 y_train_pred = st.session_state.model.predict(X_train)
@@ -445,7 +445,6 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                 
                 input_vars = st.session_state.input_vars
                 output_var = st.session_state.output_var
-                num_lags = st.session_state.num_lags
                 feature_cols = st.session_state.feature_cols
                 
                 available_new_inputs = [col for col in new_df.columns if col in input_vars and col != date_col]
@@ -487,16 +486,13 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     X_new = new_scaled[:, :-1]
                     X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
                     
-                    layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
-                              st.session_state.lstm_layers if model_type == "LSTM" else 
-                              st.session_state.rnn_layers)
                     units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
                              st.session_state.lstm_units if model_type == "LSTM" else 
                              st.session_state.rnn_units)
                     if st.session_state.model is None:
                         st.session_state.model = build_model(
                             (X_new.shape[1], X_new.shape[2]), model_type, layers, units, 
-                            st.session_state.dense_layers, st.session_state.dense_units, st.session_state.learning_rate
+                            dense_layers, st.session_state.dense_units, learning_rate
                         )
                         st.session_state.model.load_weights(MODEL_WEIGHTS_PATH)
                     y_new_pred = st.session_state.model.predict(X_new)
