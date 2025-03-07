@@ -302,80 +302,131 @@ def build_advanced_model(input_shape, model_type, layers, units, dense_layers, d
 def preprocess_data(df, input_vars, output_var, var_types, num_lags, date_col=None, 
                    handle_missing='median', remove_outliers=True, outlier_threshold=3):
     """Advanced data preprocessing with multiple options."""
-    processed_df = df.copy()
-    
-    # Handle missing values
-    if handle_missing == 'median':
-        for var in input_vars + [output_var]:
-            processed_df[var] = processed_df[var].fillna(processed_df[var].median())
-    elif handle_missing == 'mean':
-        for var in input_vars + [output_var]:
-            processed_df[var] = processed_df[var].fillna(processed_df[var].mean())
-    elif handle_missing == 'forward':
-        for var in input_vars + [output_var]:
-            processed_df[var] = processed_df[var].fillna(method='ffill')
-    elif handle_missing == 'backward':
-        for var in input_vars + [output_var]:
-            processed_df[var] = processed_df[var].fillna(method='bfill')
-    
-    # Remove outliers
-    if remove_outliers:
-        for var in input_vars + [output_var]:
-            z_scores = stats.zscore(processed_df[var])
-            processed_df[var] = processed_df[var].mask(abs(z_scores) > outlier_threshold)
-            processed_df[var] = processed_df[var].fillna(processed_df[var].median())
-    
-    # Create lagged features
-    feature_cols = []
-    for var in input_vars:
-        if var_types[var] == "Dynamic":
-            for lag in range(1, num_lags + 1):
-                processed_df[f'{var}_Lag_{lag}'] = processed_df[var].shift(lag)
-                feature_cols.append(f'{var}_Lag_{lag}')
-        else:
-            feature_cols.append(var)
-    
-    # Add output variable lags
-    for lag in range(1, num_lags + 1):
-        processed_df[f'{output_var}_Lag_{lag}'] = processed_df[output_var].shift(lag)
-        feature_cols.append(f'{output_var}_Lag_{lag}')
-    
-    # Remove rows with NaN values from lagged features
-    processed_df = processed_df.dropna(subset=[col for col in feature_cols if "_Lag_" in col], how='any')
-    
-    # Fill remaining NaN values
-    processed_df[feature_cols] = processed_df[feature_cols].fillna(0)
-    
-    return processed_df, feature_cols
+    try:
+        processed_df = df.copy()
+        
+        # Ensure input_vars and output_var exist in the dataframe
+        missing_cols = [col for col in input_vars + [output_var] if col not in processed_df.columns]
+        if missing_cols:
+            print(f"Warning: Columns {missing_cols} not found in dataframe")
+            # Filter to only include columns that exist
+            input_vars = [col for col in input_vars if col in processed_df.columns]
+            if output_var not in processed_df.columns:
+                raise ValueError(f"Output variable {output_var} not found in dataframe")
+        
+        # Handle missing values
+        if handle_missing == 'median':
+            for var in input_vars + [output_var]:
+                processed_df[var] = processed_df[var].fillna(processed_df[var].median())
+        elif handle_missing == 'mean':
+            for var in input_vars + [output_var]:
+                processed_df[var] = processed_df[var].fillna(processed_df[var].mean())
+        elif handle_missing == 'forward':
+            for var in input_vars + [output_var]:
+                processed_df[var] = processed_df[var].fillna(method='ffill')
+        elif handle_missing == 'backward':
+            for var in input_vars + [output_var]:
+                processed_df[var] = processed_df[var].fillna(method='bfill')
+        
+        # Remove outliers
+        if remove_outliers:
+            for var in input_vars + [output_var]:
+                # Use try-except to handle cases where zscore fails
+                try:
+                    z_scores = stats.zscore(processed_df[var])
+                    processed_df[var] = processed_df[var].mask(abs(z_scores) > outlier_threshold)
+                    processed_df[var] = processed_df[var].fillna(processed_df[var].median())
+                except:
+                    print(f"Warning: Could not calculate z-scores for {var}")
+        
+        # Create lagged features
+        feature_cols = []
+        for var in input_vars:
+            if var in var_types and var_types[var] == "Dynamic":
+                for lag in range(1, num_lags + 1):
+                    processed_df[f'{var}_Lag_{lag}'] = processed_df[var].shift(lag)
+                    feature_cols.append(f'{var}_Lag_{lag}')
+            else:
+                feature_cols.append(var)
+        
+        # Add output variable lags
+        for lag in range(1, num_lags + 1):
+            processed_df[f'{output_var}_Lag_{lag}'] = processed_df[output_var].shift(lag)
+            feature_cols.append(f'{output_var}_Lag_{lag}')
+        
+        # Remove rows with NaN values from lagged features
+        lag_cols = [col for col in feature_cols if "_Lag_" in col]
+        if lag_cols:
+            processed_df = processed_df.dropna(subset=lag_cols, how='any')
+        
+        # Fill remaining NaN values
+        processed_df = processed_df.fillna(0)
+        
+        return processed_df, feature_cols
+    except Exception as e:
+        print(f"Error in preprocess_data: {str(e)}")
+        # Return a minimal valid result
+        return df, input_vars
 
 # -------------------- Advanced Feature Engineering --------------------
 def engineer_features(df, feature_cols, output_var, date_col=None):
     """Add engineered features to the dataset."""
     try:
+        # Validate inputs
+        if df is None or df.empty:
+            print("Warning: Empty dataframe provided to engineer_features")
+            return df
+            
+        if not feature_cols:
+            print("Warning: No feature columns provided to engineer_features")
+            return df
+            
+        if output_var not in df.columns:
+            print(f"Warning: Output variable {output_var} not found in dataframe")
+            return df
+            
         engineered_df = df.copy()
         
         # Time-based features if date column is available
         if date_col and date_col in engineered_df.columns:
-            engineered_df['hour'] = engineered_df[date_col].dt.hour
-            engineered_df['day'] = engineered_df[date_col].dt.day
-            engineered_df['month'] = engineered_df[date_col].dt.month
-            engineered_df['day_of_week'] = engineered_df[date_col].dt.dayofweek
-            engineered_df['is_weekend'] = engineered_df['day_of_week'].isin([5, 6]).astype(int)
+            try:
+                # Check if date column is actually a datetime
+                if not pd.api.types.is_datetime64_any_dtype(engineered_df[date_col]):
+                    engineered_df[date_col] = pd.to_datetime(engineered_df[date_col], errors='coerce')
+                
+                engineered_df['hour'] = engineered_df[date_col].dt.hour
+                engineered_df['day'] = engineered_df[date_col].dt.day
+                engineered_df['month'] = engineered_df[date_col].dt.month
+                engineered_df['day_of_week'] = engineered_df[date_col].dt.dayofweek
+                engineered_df['is_weekend'] = engineered_df['day_of_week'].isin([5, 6]).astype(int)
+            except Exception as e:
+                print(f"Warning: Error processing date features: {str(e)}")
         
         # Rolling statistics
         for var in feature_cols:
             if '_Lag_' in var:
-                base_var = var.split('_Lag_')[0]
-                if base_var in engineered_df.columns:
-                    engineered_df[f'{base_var}_rolling_mean_3'] = engineered_df[base_var].rolling(window=3).mean()
-                    engineered_df[f'{base_var}_rolling_std_3'] = engineered_df[base_var].rolling(window=3).std()
+                try:
+                    base_var = var.split('_Lag_')[0]
+                    if base_var in engineered_df.columns:
+                        engineered_df[f'{base_var}_rolling_mean_3'] = engineered_df[base_var].rolling(window=3, min_periods=1).mean()
+                        engineered_df[f'{base_var}_rolling_std_3'] = engineered_df[base_var].rolling(window=3, min_periods=1).std()
+                except Exception as e:
+                    print(f"Warning: Error creating rolling features for {var}: {str(e)}")
         
-        # Interaction features
-        for i, var1 in enumerate(feature_cols):
-            for var2 in feature_cols[i+1:]:
-                if '_Lag_' not in var1 and '_Lag_' not in var2:
-                    if var1 in engineered_df.columns and var2 in engineered_df.columns:
-                        engineered_df[f'{var1}_{var2}_interaction'] = engineered_df[var1] * engineered_df[var2]
+        # Interaction features - limit to avoid explosion of features
+        valid_features = [f for f in feature_cols if f in engineered_df.columns]
+        if len(valid_features) > 10:
+            # If too many features, only use the first 10 to avoid combinatorial explosion
+            valid_features = valid_features[:10]
+            
+        for i, var1 in enumerate(valid_features):
+            for var2 in valid_features[i+1:min(i+5, len(valid_features))]:  # Limit interactions
+                try:
+                    if '_Lag_' not in var1 and '_Lag_' not in var2:
+                        if var1 in engineered_df.columns and var2 in engineered_df.columns:
+                            engineered_df[f'{var1}_{var2}_interaction'] = engineered_df[var1] * engineered_df[var2]
+                except Exception as e:
+                    print(f"Warning: Error creating interaction between {var1} and {var2}: {str(e)}")
         
         # Fill NaN values from feature engineering
         engineered_df = engineered_df.fillna(method='bfill').fillna(method='ffill').fillna(0)
@@ -646,20 +697,47 @@ with st.sidebar:
 st.title("🌊 Wateran: Advanced Time Series Prediction")
 st.markdown("**State-of-the-art Time Series Prediction with Uncertainty Quantification**", unsafe_allow_html=True)
 
-# Initialize session state with defaults
+# Initialize session state variables
 if 'model_type' not in st.session_state:
     st.session_state.model_type = "GRU"
-for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot', 'scaler', 'input_vars', 'output_var', 
+if 'num_lags' not in st.session_state:
+    st.session_state.num_lags = DEFAULT_NUM_LAGS
+if 'input_vars' not in st.session_state:
+    st.session_state.input_vars = []
+if 'output_var' not in st.session_state:
+    st.session_state.output_var = None
+if 'var_types' not in st.session_state:
+    st.session_state.var_types = {}
+if 'date_col' not in st.session_state:
+    st.session_state.date_col = None
+if 'df' not in st.session_state:
+    st.session_state.df = None
+if 'feature_cols' not in st.session_state:
+    st.session_state.feature_cols = []
+if 'handle_missing' not in st.session_state:
+    st.session_state.handle_missing = 'median'
+if 'remove_outliers' not in st.session_state:
+    st.session_state.remove_outliers = True
+if 'outlier_threshold' not in st.session_state:
+    st.session_state.outlier_threshold = 3.0
+if 'enable_feature_engineering' not in st.session_state:
+    st.session_state.enable_feature_engineering = True
+if 'physics_weight' not in st.session_state:
+    st.session_state.physics_weight = DEFAULT_PHYSICS_WEIGHT
+if 'use_mass_conservation' not in st.session_state:
+    st.session_state.use_mass_conservation = True
+if 'use_smoothness' not in st.session_state:
+    st.session_state.use_smoothness = True
+
+# Initialize other session state variables
+for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot', 'scaler', 
             'new_predictions_df', 'new_fig', 'gru_layers', 'lstm_layers', 'rnn_layers', 'gru_units', 
-            'lstm_units', 'rnn_units', 'dense_layers', 'dense_units', 'learning_rate', 'feature_cols', 
-            'new_data_file', 'selected_inputs', 'new_date_col', 'selected_metrics', 'var_types', 'new_var_types', 
-            'num_lags', 'date_col', 'df', 'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model', 'hybrid_models',
-            'use_attention', 'use_bidirectional', 'use_residual', 'dropout_rate', 'prediction_horizon', 'num_samples',
-            'handle_missing', 'remove_outliers', 'outlier_threshold', 'enable_feature_engineering', 'physics_weight', 'use_mass_conservation', 'use_smoothness']:
+            'lstm_units', 'rnn_units', 'dense_layers', 'dense_units', 'learning_rate', 
+            'new_data_file', 'selected_inputs', 'new_date_col', 'selected_metrics', 'new_var_types', 
+            'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model', 'hybrid_models',
+            'use_attention', 'use_bidirectional', 'use_residual', 'dropout_rate', 'prediction_horizon', 'num_samples']:
     if key not in st.session_state:
-        if key == 'num_lags':
-            st.session_state[key] = DEFAULT_NUM_LAGS
-        elif key in ['gru_layers', 'lstm_layers', 'rnn_layers', 'dense_layers']:
+        if key in ['gru_layers', 'lstm_layers', 'rnn_layers', 'dense_layers']:
             st.session_state[key] = 1
         elif key == 'gru_units':
             st.session_state[key] = [DEFAULT_GRU_UNITS]
@@ -677,20 +755,6 @@ for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot
             st.session_state[key] = DEFAULT_PREDICTION_HORIZON
         elif key == 'num_samples':
             st.session_state[key] = 100
-        elif key == 'handle_missing':
-            st.session_state[key] = 'median'
-        elif key == 'remove_outliers':
-            st.session_state[key] = True
-        elif key == 'outlier_threshold':
-            st.session_state[key] = 3.0
-        elif key == 'enable_feature_engineering':
-            st.session_state[key] = True
-        elif key == 'physics_weight':
-            st.session_state[key] = DEFAULT_PHYSICS_WEIGHT
-        elif key == 'use_mass_conservation':
-            st.session_state[key] = True
-        elif key == 'use_smoothness':
-            st.session_state[key] = True
         else:
             st.session_state[key] = None
 
@@ -827,7 +891,7 @@ with col2:
     st.session_state.model_type = model_type
     
     st.markdown("**Training Parameters**")
-    num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=st.session_state.num_lags, step=1)
+    num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=DEFAULT_NUM_LAGS if 'num_lags' not in st.session_state else st.session_state.num_lags, step=1)
     st.session_state.num_lags = num_lags
     
     epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, key="epochs")
@@ -987,12 +1051,16 @@ with col2:
                 
                 # Feature engineering
                 if st.session_state.enable_feature_engineering:
-                    processed_df = engineer_features(
-                        processed_df,
-                        feature_cols,
-                        st.session_state.output_var,
-                        st.session_state.date_col
-                    )
+                    try:
+                        processed_df = engineer_features(
+                            processed_df,
+                            feature_cols,
+                            st.session_state.output_var,
+                            st.session_state.date_col
+                        )
+                    except Exception as e:
+                        st.error(f"Error during feature engineering: {str(e)}")
+                        st.info("Continuing with basic features only.")
                 
                 st.session_state.feature_cols = feature_cols
                 
@@ -1146,12 +1214,16 @@ with col2:
                 
                 # Feature engineering
                 if st.session_state.enable_feature_engineering:
-                    processed_df = engineer_features(
-                        processed_df,
-                        feature_cols,
-                        st.session_state.output_var,
-                        st.session_state.date_col
-                    )
+                    try:
+                        processed_df = engineer_features(
+                            processed_df,
+                            feature_cols,
+                            st.session_state.output_var,
+                            st.session_state.date_col
+                        )
+                    except Exception as e:
+                        st.error(f"Error during feature engineering: {str(e)}")
+                        st.info("Continuing with basic features only.")
                 
                 # Split and scale data
                 train_size = int(len(processed_df) * train_split)
@@ -1273,12 +1345,16 @@ if st.session_state.feature_cols:
             
             # Feature engineering
             if st.session_state.enable_feature_engineering:
-                processed_df = engineer_features(
-                    processed_df,
-                    feature_cols,
-                    st.session_state.output_var,
-                    st.session_state.date_col
-                )
+                try:
+                    processed_df = engineer_features(
+                        processed_df,
+                        feature_cols,
+                        st.session_state.output_var,
+                        st.session_state.date_col
+                    )
+                except Exception as e:
+                    st.error(f"Error during feature engineering: {str(e)}")
+                    st.info("Continuing with basic features only.")
             
             # Scale data
             scaler = st.session_state.scaler
