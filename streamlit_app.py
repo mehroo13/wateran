@@ -437,12 +437,12 @@ def plot_advanced_metrics(metrics_history):
     
     # Loss plot
     fig.add_trace(
-        go.Scatter(y=[m['loss'] for m in metrics_history], name='Training Loss'),
+        go.Scatter(y=[m.get('loss', 0) for m in metrics_history], name='Training Loss'),
         row=1, col=1
     )
-    if 'val_loss' in metrics_history[0]:
+    if metrics_history and 'val_loss' in metrics_history[0]:
         fig.add_trace(
-            go.Scatter(y=[m['val_loss'] for m in metrics_history], name='Validation Loss'),
+            go.Scatter(y=[m.get('val_loss', 0) for m in metrics_history], name='Validation Loss'),
             row=1, col=1
         )
     
@@ -454,13 +454,13 @@ def plot_advanced_metrics(metrics_history):
     
     # RMSE plot
     fig.add_trace(
-        go.Scatter(y=[np.sqrt(m['mse']) for m in metrics_history], name='RMSE'),
+        go.Scatter(y=[np.sqrt(m.get('mse', m.get('mean_squared_error', 0))) for m in metrics_history], name='RMSE'),
         row=2, col=1
     )
     
     # R² plot
     fig.add_trace(
-        go.Scatter(y=[m['r2'] for m in metrics_history], name='R²'),
+        go.Scatter(y=[m.get('r2', 0) for m in metrics_history], name='R²'),
         row=2, col=2
     )
     
