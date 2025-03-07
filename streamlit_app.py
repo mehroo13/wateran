@@ -15,7 +15,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 from datetime import datetime, timedelta
-import tensorflow_probability as tfp
+try:
+    import tensorflow_probability as tfp
+    TFP_AVAILABLE = True
+except ImportError:
+    TFP_AVAILABLE = False
+    print("Warning: TensorFlow Probability not available. Using simpler uncertainty estimation.")
 from tensorflow.keras.layers import Bidirectional, Dense, Dropout, LSTM, GRU, SimpleRNN, Input, concatenate, Layer
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
@@ -273,18 +278,23 @@ def build_advanced_model(input_shape, model_type, layers, units, dense_layers, d
         x = Dropout(dropout_rate)(x)
     
     # Output layer with uncertainty estimation
-    outputs = Dense(2)(x)  # Mean and standard deviation
-    
-    model = Model(inputs=inputs, outputs=outputs)
-    
-    # Custom loss function for probabilistic predictions
-    def negative_log_likelihood(y_true, y_pred):
-        mean, std = y_pred[:, 0], tf.nn.softplus(y_pred[:, 1]) + 1e-6
-        dist = tfp.distributions.Normal(loc=mean, scale=std)
-        return -tf.reduce_mean(dist.log_prob(y_true[:, 0]))
-    
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), 
-                 loss=negative_log_likelihood)
+    if TFP_AVAILABLE:
+        outputs = Dense(2)(x)  # Mean and standard deviation
+        model = Model(inputs=inputs, outputs=outputs)
+        
+        # Custom loss function for probabilistic predictions
+        def negative_log_likelihood(y_true, y_pred):
+            mean, std = y_pred[:, 0], tf.nn.softplus(y_pred[:, 1]) + 1e-6
+            dist = tfp.distributions.Normal(loc=mean, scale=std)
+            return -tf.reduce_mean(dist.log_prob(y_true[:, 0]))
+        
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), 
+                     loss=negative_log_likelihood)
+    else:
+        outputs = Dense(1)(x)  # Just mean prediction
+        model = Model(inputs=inputs, outputs=outputs)
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+                     loss='mse')
     
     return model
 
@@ -462,16 +472,32 @@ def train_advanced_model(model, X_train, y_train, X_val, y_val, epochs, batch_si
 # -------------------- Advanced Prediction --------------------
 def predict_with_uncertainty(model, X, num_samples=100):
     """Generate predictions with uncertainty estimation."""
-    predictions = []
-    for _ in range(num_samples):
-        pred = model.predict(X)
-        predictions.append(pred)
-    
-    predictions = np.array(predictions)
-    mean_pred = np.mean(predictions, axis=0)
-    std_pred = np.std(predictions, axis=0)
-    
-    return mean_pred, std_pred
+    if TFP_AVAILABLE:
+        predictions = []
+        for _ in range(num_samples):
+            pred = model.predict(X)
+            predictions.append(pred)
+        
+        predictions = np.array(predictions)
+        mean_pred = np.mean(predictions, axis=0)
+        std_pred = np.std(predictions, axis=0)
+        
+        return mean_pred, std_pred
+    else:
+        # Simple uncertainty estimation using model ensemble
+        predictions = []
+        for _ in range(num_samples):
+            # Add small random noise to input for ensemble effect
+            noise = np.random.normal(0, 0.01, X.shape)
+            X_noisy = X + noise
+            pred = model.predict(X_noisy)
+            predictions.append(pred)
+        
+        predictions = np.array(predictions)
+        mean_pred = np.mean(predictions, axis=0)
+        std_pred = np.std(predictions, axis=0)
+        
+        return mean_pred, std_pred
 
 def generate_future_predictions(model, last_sequence, scaler, feature_cols, num_steps, 
                               input_vars, output_var, var_types, num_lags):
