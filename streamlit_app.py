@@ -351,33 +351,39 @@ def preprocess_data(df, input_vars, output_var, var_types, num_lags, date_col=No
 # -------------------- Advanced Feature Engineering --------------------
 def engineer_features(df, feature_cols, output_var, date_col=None):
     """Add engineered features to the dataset."""
-    engineered_df = df.copy()
-    
-    # Time-based features if date column is available
-    if date_col:
-        engineered_df['hour'] = engineered_df[date_col].dt.hour
-        engineered_df['day'] = engineered_df[date_col].dt.day
-        engineered_df['month'] = engineered_df[date_col].dt.month
-        engineered_df['day_of_week'] = engineered_df[date_col].dt.dayofweek
-        engineered_df['is_weekend'] = engineered_df['day_of_week'].isin([5, 6]).astype(int)
-    
-    # Rolling statistics
-    for var in feature_cols:
-        if '_Lag_' in var:
-            base_var = var.split('_Lag_')[0]
-            engineered_df[f'{base_var}_rolling_mean_3'] = engineered_df[base_var].rolling(window=3).mean()
-            engineered_df[f'{base_var}_rolling_std_3'] = engineered_df[base_var].rolling(window=3).std()
-    
-    # Interaction features
-    for i, var1 in enumerate(feature_cols):
-        for var2 in feature_cols[i+1:]:
-            if '_Lag_' not in var1 and '_Lag_' not in var2:
-                engineered_df[f'{var1}_{var2}_interaction'] = engineered_df[var1] * engineered_df[var2]
-    
-    # Fill NaN values from feature engineering
-    engineered_df = engineered_df.fillna(method='bfill').fillna(method='ffill').fillna(0)
-    
-    return engineered_df
+    try:
+        engineered_df = df.copy()
+        
+        # Time-based features if date column is available
+        if date_col and date_col in engineered_df.columns:
+            engineered_df['hour'] = engineered_df[date_col].dt.hour
+            engineered_df['day'] = engineered_df[date_col].dt.day
+            engineered_df['month'] = engineered_df[date_col].dt.month
+            engineered_df['day_of_week'] = engineered_df[date_col].dt.dayofweek
+            engineered_df['is_weekend'] = engineered_df['day_of_week'].isin([5, 6]).astype(int)
+        
+        # Rolling statistics
+        for var in feature_cols:
+            if '_Lag_' in var:
+                base_var = var.split('_Lag_')[0]
+                if base_var in engineered_df.columns:
+                    engineered_df[f'{base_var}_rolling_mean_3'] = engineered_df[base_var].rolling(window=3).mean()
+                    engineered_df[f'{base_var}_rolling_std_3'] = engineered_df[base_var].rolling(window=3).std()
+        
+        # Interaction features
+        for i, var1 in enumerate(feature_cols):
+            for var2 in feature_cols[i+1:]:
+                if '_Lag_' not in var1 and '_Lag_' not in var2:
+                    if var1 in engineered_df.columns and var2 in engineered_df.columns:
+                        engineered_df[f'{var1}_{var2}_interaction'] = engineered_df[var1] * engineered_df[var2]
+        
+        # Fill NaN values from feature engineering
+        engineered_df = engineered_df.fillna(method='bfill').fillna(method='ffill').fillna(0)
+        
+        return engineered_df
+    except Exception as e:
+        print(f"Warning: Feature engineering failed with error: {str(e)}")
+        return df  # Return original dataframe if engineering fails
 
 # -------------------- Advanced Visualization --------------------
 def plot_advanced_metrics(metrics_history):
