@@ -524,27 +524,26 @@ def train_advanced_model(model, X_train, y_train, X_val, y_val, epochs, batch_si
 def predict_with_uncertainty(model, X, num_samples=100):
     """Generate predictions with uncertainty estimation."""
     if TFP_AVAILABLE:
-        predictions = []
-        for _ in range(num_samples):
-            pred = model.predict(X)
-            predictions.append(pred)
-        
-        predictions = np.array(predictions)
-        mean_pred = np.mean(predictions, axis=0)
-        std_pred = np.std(predictions, axis=0)
-        
+        # For TFP models, we can get uncertainty directly from the model
+        predictions = model.predict(X)
+        mean_pred = predictions[:, 0]
+        std_pred = predictions[:, 1]
         return mean_pred, std_pred
     else:
-        # Simple uncertainty estimation using model ensemble
-        predictions = []
-        for _ in range(num_samples):
-            # Add small random noise to input for ensemble effect
-            noise = np.random.normal(0, 0.01, X.shape)
-            X_noisy = X + noise
-            pred = model.predict(X_noisy)
-            predictions.append(pred)
+        # For non-TFP models, use a smaller number of samples for testing
+        if len(X) > 1000:  # If dataset is large, reduce number of samples
+            num_samples = min(20, num_samples)
         
-        predictions = np.array(predictions)
+        # Generate all noise at once
+        noise = np.random.normal(0, 0.01, (num_samples,) + X.shape)
+        X_noisy = X + noise
+        
+        # Reshape for batch prediction
+        X_batch = X_noisy.reshape(-1, *X.shape[1:])
+        predictions = model.predict(X_batch)
+        
+        # Reshape back and calculate statistics
+        predictions = predictions.reshape(num_samples, -1)
         mean_pred = np.mean(predictions, axis=0)
         std_pred = np.std(predictions, axis=0)
         
@@ -1236,42 +1235,43 @@ with col2:
                 y_train = y_train.reshape(-1, 1)
                 y_test = y_test.reshape(-1, 1)
                 
-                # Build and load model
-                layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
-                          st.session_state.lstm_layers if model_type == "LSTM" else 
-                          st.session_state.rnn_layers if model_type == "RNN" else 
-                          st.session_state.gru_layers)
-                units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
-                         st.session_state.lstm_units if model_type == "LSTM" else 
-                         st.session_state.rnn_units if model_type == "RNN" else 
-                         st.session_state.gru_units)
+                # Use existing model if available, otherwise load weights
+                if st.session_state.model is None:
+                    layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
+                              st.session_state.lstm_layers if model_type == "LSTM" else 
+                              st.session_state.rnn_layers if model_type == "RNN" else 
+                              st.session_state.gru_layers)
+                    units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
+                             st.session_state.lstm_units if model_type == "LSTM" else 
+                             st.session_state.rnn_units if model_type == "RNN" else 
+                             st.session_state.gru_units)
+                    
+                    st.session_state.model = build_advanced_model(
+                        (X_train.shape[1], X_train.shape[2]), 
+                        model_type, 
+                        layers, 
+                        units, 
+                        st.session_state.dense_layers, 
+                        st.session_state.dense_units, 
+                        st.session_state.learning_rate,
+                        st.session_state.use_attention,
+                        st.session_state.use_bidirectional,
+                        st.session_state.use_residual,
+                        st.session_state.dropout_rate
+                    )
+                    st.session_state.model.load_weights(MODEL_WEIGHTS_PATH)
                 
-                st.session_state.model = build_advanced_model(
-                    (X_train.shape[1], X_train.shape[2]), 
-                    model_type, 
-                    layers, 
-                    units, 
-                    st.session_state.dense_layers, 
-                    st.session_state.dense_units, 
-                    st.session_state.learning_rate,
-                    st.session_state.use_attention,
-                    st.session_state.use_bidirectional,
-                    st.session_state.use_residual,
-                    st.session_state.dropout_rate
-                )
-                
-                st.session_state.model.load_weights(MODEL_WEIGHTS_PATH)
-                
-                # Generate predictions with uncertainty
+                # Generate predictions with uncertainty (reduced samples for testing)
+                test_samples = min(20, st.session_state.num_samples)  # Reduce samples for testing
                 y_train_pred_mean, y_train_pred_std = predict_with_uncertainty(
                     st.session_state.model,
                     X_train,
-                    st.session_state.num_samples
+                    test_samples
                 )
                 y_test_pred_mean, y_test_pred_std = predict_with_uncertainty(
                     st.session_state.model,
                     X_test,
-                    st.session_state.num_samples
+                    test_samples
                 )
                 
                 # Inverse transform predictions
@@ -1292,20 +1292,25 @@ with col2:
                 
                 # Create results DataFrames
                 dates = processed_df[st.session_state.date_col] if st.session_state.date_col else pd.RangeIndex(len(processed_df))
-                train_dates, test_dates = dates[:train_size], dates[train_size:]
+                train_dates = dates[:train_size][:len(y_train_actual)]
+                test_dates = dates[train_size:][:len(y_test_actual)]
+                
+                # Ensure all arrays have the same length
+                min_train_len = min(len(train_dates), len(y_train_actual), len(y_train_pred), len(y_train_pred_std))
+                min_test_len = min(len(test_dates), len(y_test_actual), len(y_test_pred), len(y_test_pred_std))
                 
                 st.session_state.train_results_df = pd.DataFrame({
-                    "Date": train_dates[:len(y_train_actual)],
-                    f"Actual_{st.session_state.output_var}": y_train_actual,
-                    f"Predicted_{st.session_state.output_var}": y_train_pred,
-                    "Uncertainty": y_train_pred_std
+                    "Date": train_dates[:min_train_len],
+                    f"Actual_{st.session_state.output_var}": y_train_actual[:min_train_len],
+                    f"Predicted_{st.session_state.output_var}": y_train_pred[:min_train_len],
+                    "Uncertainty": y_train_pred_std[:min_train_len]
                 })
                 
                 st.session_state.test_results_df = pd.DataFrame({
-                    "Date": test_dates[:len(y_test_actual)],
-                    f"Actual_{st.session_state.output_var}": y_test_actual,
-                    f"Predicted_{st.session_state.output_var}": y_test_pred,
-                    "Uncertainty": y_test_pred_std
+                    "Date": test_dates[:min_test_len],
+                    f"Actual_{st.session_state.output_var}": y_test_actual[:min_test_len],
+                    f"Predicted_{st.session_state.output_var}": y_test_pred[:min_test_len],
+                    "Uncertainty": y_test_pred_std[:min_test_len]
                 })
                 
                 # Create prediction plot
