@@ -32,9 +32,11 @@ DEFAULT_TEST_CSV_PATH = "test_results.csv"
 
 # -------------------- Metric Functions --------------------
 def nse(actual, predicted):
+    """Nash-Sutcliffe Efficiency"""
     return 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - np.mean(actual)) ** 2))
 
 def kge(actual, predicted):
+    """Kling-Gupta Efficiency"""
     r = np.corrcoef(actual, predicted)[0, 1]
     alpha = np.std(predicted) / np.std(actual)
     beta = np.mean(predicted) / np.mean(actual)
@@ -63,8 +65,9 @@ class StreamlitProgressCallback(tf.keras.callbacks.Callback):
         self.progress_placeholder.progress(min(progress, 1.0))
         self.progress_placeholder.text(f"Epoch {self.current_epoch}/{self.total_epochs} completed")
 
-# -------------------- Model Definition with Regularization --------------------
+# -------------------- Model Definition --------------------
 def build_model(input_shape, model_type, layers, units, dense_layers, dense_units, learning_rate):
+    """Build and compile the neural network model."""
     model = tf.keras.Sequential()
     
     if model_type == "Hybrid":
@@ -82,37 +85,28 @@ def build_model(input_shape, model_type, layers, units, dense_layers, dense_unit
                 return_seq = not (idx == len(selected_models) - 1 and i == layers_per_model - 1)
                 if sub_model == "GRU":
                     model.add(tf.keras.layers.GRU(sub_units[i], return_sequences=return_seq, 
-                                                  input_shape=input_shape if idx == 0 and i == 0 else None,
-                                                  kernel_regularizer=tf.keras.regularizers.l2(0.01)))  # L2 regularization
+                                                  input_shape=input_shape if idx == 0 and i == 0 else None))
                 elif sub_model == "LSTM":
                     model.add(tf.keras.layers.LSTM(sub_units[i], return_sequences=return_seq, 
-                                                   input_shape=input_shape if idx == 0 and i == 0 else None,
-                                                   kernel_regularizer=tf.keras.regularizers.l2(0.01)))
+                                                   input_shape=input_shape if idx == 0 and i == 0 else None))
                 elif sub_model == "RNN":
                     model.add(tf.keras.layers.SimpleRNN(sub_units[i], return_sequences=return_seq, 
-                                                        input_shape=input_shape if idx == 0 and i == 0 else None,
-                                                        kernel_regularizer=tf.keras.regularizers.l2(0.01)))
-                model.add(tf.keras.layers.Dropout(0.3))  # Increased dropout for regularization
+                                                        input_shape=input_shape if idx == 0 and i == 0 else None))
+                model.add(tf.keras.layers.Dropout(0.2))
     else:
         for i in range(layers):
             return_seq = i < layers - 1
             if model_type == "GRU":
-                model.add(tf.keras.layers.GRU(units[i], return_sequences=return_seq, 
-                                              input_shape=input_shape if i == 0 else None,
-                                              kernel_regularizer=tf.keras.regularizers.l2(0.01)))
+                model.add(tf.keras.layers.GRU(units[i], return_sequences=return_seq, input_shape=input_shape if i == 0 else None))
             elif model_type == "LSTM":
-                model.add(tf.keras.layers.LSTM(units[i], return_sequences=return_seq, 
-                                               input_shape=input_shape if i == 0 else None,
-                                               kernel_regularizer=tf.keras.regularizers.l2(0.01)))
+                model.add(tf.keras.layers.LSTM(units[i], return_sequences=return_seq, input_shape=input_shape if i == 0 else None))
             elif model_type == "RNN":
-                model.add(tf.keras.layers.SimpleRNN(units[i], return_sequences=return_seq, 
-                                                    input_shape=input_shape if i == 0 else None,
-                                                    kernel_regularizer=tf.keras.regularizers.l2(0.01)))
-            model.add(tf.keras.layers.Dropout(0.3))
+                model.add(tf.keras.layers.SimpleRNN(units[i], return_sequences=return_seq, input_shape=input_shape if i == 0 else None))
+            model.add(tf.keras.layers.Dropout(0.2))
     
     for unit in dense_units[:dense_layers]:
-        model.add(tf.keras.layers.Dense(unit, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.01)))
-    model.add(tf.keras.layers.Dense(1))
+        model.add(tf.keras.layers.Dense(unit, activation='relu'))
+    model.add(tf.keras.layers.Dense(1))  # Single output for regression
     
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss='mse')
     return model
@@ -134,7 +128,7 @@ st.markdown("**Simple, Fast, and Accurate Predictions Powered by Neural Networks
 # Initialize session state with defaults
 if 'model_type' not in st.session_state:
     st.session_state.model_type = "GRU"
-for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot', 'scaler', 'input_vars', 'output_var', 
+for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot', 'scaler_X', 'scaler_y', 'input_vars', 'output_var', 
             'new_predictions_df', 'new_fig', 'gru_layers', 'lstm_layers', 'rnn_layers', 'gru_units', 
             'lstm_units', 'rnn_units', 'dense_layers', 'dense_units', 'learning_rate', 'feature_cols', 
             'new_data_file', 'selected_inputs', 'new_date_col', 'selected_metrics', 'var_types', 'new_var_types', 
@@ -352,8 +346,7 @@ with col2:
                 df = st.session_state.df.copy()
                 selected_cols = st.session_state.input_vars + [st.session_state.output_var]
                 if df[selected_cols].isnull().sum().sum() > 0:
-                    st.warning("Missing values detected. Filling with median.")
-                    df[selected_cols] = df[selected_cols].fillna(df[selected_cols].median())
+                    st.warning("Missing values detected. Handled during preprocessing.")
 
                 feature_cols = []
                 num_lags = st.session_state.num_lags
@@ -363,33 +356,41 @@ with col2:
                             df[f'{var}_Lag_{lag}'] = df[var].shift(lag)
                             feature_cols.append(f'{var}_Lag_{lag}')
                     else:
+                        df[var] = df[var].fillna(0) if df[var].isnull().sum() > len(df) * 0.9 else df[var].fillna(df[var].median())
                         feature_cols.append(var)
                 for lag in range(1, num_lags + 1):
                     df[f'{st.session_state.output_var}_Lag_{lag}'] = df[st.session_state.output_var].shift(lag)
                     feature_cols.append(f'{st.session_state.output_var}_Lag_{lag}')
                 
-                df = df.dropna()  # Drop rows with NaN after lagging
+                df = df.dropna(subset=[col for col in feature_cols if "_Lag_" in col], how='all')
+                df[feature_cols] = df[feature_cols].fillna(0)
                 st.session_state.feature_cols = feature_cols
-                
-                # Add noise for data augmentation
-                noise = np.random.normal(0, 0.01, df[feature_cols].shape)
-                df[feature_cols] += noise
                 
                 train_size = int(len(df) * train_split)
                 train_df, test_df = df[:train_size], df[train_size:]
-                scaler = MinMaxScaler()
-                train_scaled = scaler.fit_transform(train_df[feature_cols + [st.session_state.output_var]])
-                test_scaled = scaler.transform(test_df[feature_cols + [st.session_state.output_var]])
-                st.session_state.scaler = scaler
                 
-                X_train, y_train = train_scaled[:, :-1], train_scaled[:, -1]
-                X_test, y_test = test_scaled[:, :-1], test_scaled[:, -1]
-                X_train = X_train.reshape((X_train.shape[0], num_lags, len(feature_cols) // num_lags))
-                X_test = X_test.reshape((X_test.shape[0], num_lags, len(feature_cols) // num_lags))
-                y_train = y_train.reshape(-1, 1)
-                y_test = y_test.reshape(-1, 1)
-                st.session_state.X_train, st.session_state.y_train = X_train, y_train
-                st.session_state.X_test, st.session_state.y_test = X_test, y_test
+                # Separate scalers for X and y
+                scaler_X = MinMaxScaler()
+                scaler_y = MinMaxScaler()
+                
+                train_X = train_df[feature_cols]
+                train_y = train_df[[st.session_state.output_var]]
+                test_X = test_df[feature_cols]
+                test_y = test_df[[st.session_state.output_var]]
+                
+                train_X_scaled = scaler_X.fit_transform(train_X)
+                train_y_scaled = scaler_y.fit_transform(train_y)
+                test_X_scaled = scaler_X.transform(test_X)
+                test_y_scaled = scaler_y.transform(test_y)
+                
+                X_train = train_X_scaled.reshape((train_X_scaled.shape[0], 1, train_X_scaled.shape[1]))
+                X_test = test_X_scaled.reshape((test_X_scaled.shape[0], 1, test_X_scaled.shape[1]))
+                st.session_state.X_train = X_train
+                st.session_state.y_train = train_y_scaled
+                st.session_state.X_test = X_test
+                st.session_state.y_test = test_y_scaled
+                st.session_state.scaler_X = scaler_X
+                st.session_state.scaler_y = scaler_y
 
                 layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
                           st.session_state.lstm_layers if model_type == "LSTM" else 
@@ -408,20 +409,14 @@ with col2:
                     st.session_state.dense_units, 
                     st.session_state.learning_rate
                 )
-                early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-                lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5)
+                early_stopping = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=10, restore_best_weights=True)
+                lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.5, patience=5)
                 with st.spinner("Training in progress..."):
                     progress_placeholder = st.empty()
                     callback = StreamlitProgressCallback(epochs, progress_placeholder)
                     try:
-                        st.session_state.model.fit(
-                            X_train, y_train, 
-                            validation_data=(X_test, y_test), 
-                            epochs=epochs, 
-                            batch_size=batch_size, 
-                            verbose=1, 
-                            callbacks=[callback, early_stopping, lr_scheduler]
-                        )
+                        st.session_state.model.fit(X_train, train_y_scaled, epochs=epochs, batch_size=batch_size, verbose=1, 
+                                                  callbacks=[callback, early_stopping, lr_scheduler])
                         st.session_state.model.save_weights(MODEL_WEIGHTS_PATH)
                         st.session_state.model.save(MODEL_FULL_PATH)
                         st.success("Model trained and saved successfully!")
@@ -430,12 +425,10 @@ with col2:
         
         with col_btn2:
             if st.button(f"🤖 Suggest {model_type} Units", key="suggest_button"):
-                if "X_train" not in st.session_state:
+                if "X_train" not in st.session_state or "y_train" not in st.session_state:
                     st.error("Please train the model first to generate training data.")
                 else:
-                    input_dim = st.session_state.X_train.shape[2]
-                    suggested_units = [max(32, min(128, input_dim * 2)), max(16, min(64, input_dim))]
-                    st.info(f"Suggested {model_type} Units: {suggested_units}")
+                    st.info(f"Suggested {model_type} Units: [64, 32] (Placeholder - customize based on data size)")
 
         with col_btn3:
             if st.button("🔍 Test Model", key="test_button"):
@@ -450,53 +443,35 @@ with col2:
                         for lag in range(1, num_lags + 1):
                             df[f'{var}_Lag_{lag}'] = df[var].shift(lag)
                     else:
-                        df[var] = df[var].fillna(df[var].median())
+                        df[var] = df[var].fillna(0) if df[var].isnull().sum() > len(df) * 0.9 else df[var].fillna(df[var].median())
                 for lag in range(1, num_lags + 1):
                     df[f'{st.session_state.output_var}_Lag_{lag}'] = df[st.session_state.output_var].shift(lag)
                 
-                df = df.dropna()
+                df = df.dropna(subset=[col for col in feature_cols if "_Lag_" in col], how='all')
+                df[feature_cols] = df[feature_cols].fillna(0)
                 train_size = int(len(df) * train_split)
                 train_df, test_df = df[:train_size], df[train_size:]
-                scaler = st.session_state.scaler
                 
-                train_scaled = scaler.transform(train_df[feature_cols + [st.session_state.output_var]])
-                test_scaled = scaler.transform(test_df[feature_cols + [st.session_state.output_var]])
-                X_train, y_train = train_scaled[:, :-1], train_scaled[:, -1]
-                X_test, y_test = test_scaled[:, :-1], test_scaled[:, -1]
-                X_train = X_train.reshape((X_train.shape[0], num_lags, len(feature_cols) // num_lags))
-                X_test = X_test.reshape((X_test.shape[0], num_lags, len(feature_cols) // num_lags))
-                y_train = y_train.reshape(-1, 1)
-                y_test = y_test.reshape(-1, 1)
-
-                layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
-                          st.session_state.lstm_layers if model_type == "LSTM" else 
-                          st.session_state.rnn_layers if model_type == "RNN" else 
-                          st.session_state.gru_layers)
-                units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
-                         st.session_state.lstm_units if model_type == "LSTM" else 
-                         st.session_state.rnn_units if model_type == "RNN" else 
-                         st.session_state.gru_units)
-                st.session_state.model = build_model(
-                    (X_train.shape[1], X_train.shape[2]), 
-                    model_type, 
-                    layers, 
-                    units, 
-                    st.session_state.dense_layers, 
-                    st.session_state.dense_units, 
-                    st.session_state.learning_rate
-                )
+                train_X = train_df[feature_cols]
+                test_X = test_df[feature_cols]
+                train_X_scaled = st.session_state.scaler_X.transform(train_X)
+                test_X_scaled = st.session_state.scaler_X.transform(test_X)
+                X_train = train_X_scaled.reshape((train_X_scaled.shape[0], 1, train_X_scaled.shape[1]))
+                X_test = test_X_scaled.reshape((test_X_scaled.shape[0], 1, test_X_scaled.shape[1]))
+                
+                y_train_actual = train_df[st.session_state.output_var].values
+                y_test_actual = test_df[st.session_state.output_var].values
+                
                 st.session_state.model.load_weights(MODEL_WEIGHTS_PATH)
-                y_train_pred = st.session_state.model.predict(X_train)
-                y_test_pred = st.session_state.model.predict(X_test)
-                y_train_pred = scaler.inverse_transform(np.hstack([y_train_pred, X_train[:, -1, :]]))[:, 0]
-                y_test_pred = scaler.inverse_transform(np.hstack([y_test_pred, X_test[:, -1, :]]))[:, 0]
-                y_train_actual = scaler.inverse_transform(np.hstack([y_train, X_train[:, -1, :]]))[:, 0]
-                y_test_actual = scaler.inverse_transform(np.hstack([y_test, X_test[:, -1, :]]))[:, 0]
+                y_train_pred_scaled = st.session_state.model.predict(X_train)
+                y_test_pred_scaled = st.session_state.model.predict(X_test)
+                y_train_pred = st.session_state.scaler_y.inverse_transform(y_train_pred_scaled)
+                y_test_pred = st.session_state.scaler_y.inverse_transform(y_test_pred_scaled)
                 y_train_pred, y_test_pred = np.clip(y_train_pred, 0, None), np.clip(y_test_pred, 0, None)
 
                 metrics = {metric: {
-                    "Training": all_metrics_dict[metric](y_train_actual, y_train_pred),
-                    "Testing": all_metrics_dict[metric](y_test_actual, y_test_pred)
+                    "Training": all_metrics_dict[metric](y_train_actual, y_train_pred.flatten()),
+                    "Testing": all_metrics_dict[metric](y_test_actual, y_test_pred.flatten())
                 } for metric in st.session_state.selected_metrics}
                 st.session_state.metrics = metrics
 
@@ -505,19 +480,19 @@ with col2:
                 st.session_state.train_results_df = pd.DataFrame({
                     "Date": train_dates[:len(y_train_actual)],
                     f"Actual_{st.session_state.output_var}": y_train_actual,
-                    f"Predicted_{st.session_state.output_var}": y_train_pred
+                    f"Predicted_{st.session_state.output_var}": y_train_pred.flatten()
                 })
                 st.session_state.test_results_df = pd.DataFrame({
                     "Date": test_dates[:len(y_test_actual)],
                     f"Actual_{st.session_state.output_var}": y_test_actual,
-                    f"Predicted_{st.session_state.output_var}": y_test_pred
+                    f"Predicted_{st.session_state.output_var}": y_test_pred.flatten()
                 })
 
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=train_dates[:len(y_train_actual)], y=y_train_actual, name="Train Actual", line=dict(color="#1f77b4")))
-                fig.add_trace(go.Scatter(x=train_dates[:len(y_train_pred)], y=y_train_pred, name="Train Predicted", line=dict(color="#ff7f0e", dash="dash")))
+                fig.add_trace(go.Scatter(x=train_dates[:len(y_train_pred)], y=y_train_pred.flatten(), name="Train Predicted", line=dict(color="#ff7f0e", dash="dash")))
                 fig.add_trace(go.Scatter(x=test_dates[:len(y_test_actual)], y=y_test_actual, name="Test Actual", line=dict(color="#2ca02c")))
-                fig.add_trace(go.Scatter(x=test_dates[:len(y_test_pred)], y=y_test_pred, name="Test Predicted", line=dict(color="#d62728", dash="dash")))
+                fig.add_trace(go.Scatter(x=test_dates[:len(y_test_pred)], y=y_test_pred.flatten(), name="Test Predicted", line=dict(color="#d62728", dash="dash")))
                 fig.update_layout(title=f"Training and Testing: {st.session_state.output_var}", xaxis_title="Date", yaxis_title=st.session_state.output_var)
                 st.session_state.fig = fig
                 st.success("Model tested successfully!")
@@ -534,22 +509,26 @@ if st.session_state.feature_cols:
                     for lag in range(1, num_lags + 1):
                         df[f'{var}_Lag_{lag}'] = df[var].shift(lag)
                 else:
-                    df[var] = df[var].fillna(df[var].median())
+                    df[var] = df[var].fillna(0) if df[var].isnull().sum() > len(df) * 0.9 else df[var].fillna(df[var].median())
             for lag in range(1, num_lags + 1):
                 df[f'{st.session_state.output_var}_Lag_{lag}'] = df[st.session_state.output_var].shift(lag)
             
-            df = df.dropna()
-            scaler = st.session_state.scaler
-            scaled = scaler.transform(df[feature_cols + [st.session_state.output_var]])
-            X, y = scaled[:, :-1], scaled[:, -1]
-            X = X.reshape((X.shape[0], num_lags, len(feature_cols) // num_lags))
-            y = y.reshape(-1, 1)
-
+            df = df.dropna(subset=[col for col in feature_cols if "_Lag_" in col], how='all')
+            df[feature_cols] = df[feature_cols].fillna(0)
+            X = df[feature_cols]
+            y = df[[st.session_state.output_var]]
+            
+            scaler_X = st.session_state.scaler_X
+            scaler_y = st.session_state.scaler_y
+            X_scaled = scaler_X.transform(X)
+            y_scaled = scaler_y.transform(y)
+            X_scaled = X_scaled.reshape((X_scaled.shape[0], 1, X_scaled.shape[1]))
+            
             tscv = TimeSeriesSplit(n_splits=5)
             cv_metrics = {metric: [] for metric in st.session_state.selected_metrics}
-            for train_idx, val_idx in tscv.split(X):
-                X_tr, X_val = X[train_idx], X[val_idx]
-                y_tr, y_val = y[train_idx], y[val_idx]
+            for train_idx, val_idx in tscv.split(X_scaled):
+                X_tr, X_val = X_scaled[train_idx], X_scaled[val_idx]
+                y_tr, y_val = y_scaled[train_idx], y_scaled[val_idx]
                 layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
                           st.session_state.lstm_layers if model_type == "LSTM" else 
                           st.session_state.rnn_layers if model_type == "RNN" else 
@@ -567,12 +546,12 @@ if st.session_state.feature_cols:
                     st.session_state.dense_units, 
                     st.session_state.learning_rate
                 )
-                model.fit(X_tr, y_tr, epochs=epochs, batch_size=batch_size, verbose=0, validation_data=(X_val, y_val))
-                y_val_pred = model.predict(X_val)
-                y_val_pred = scaler.inverse_transform(np.hstack([y_val_pred, X_val[:, -1, :]]))[:, 0]
-                y_val_actual = scaler.inverse_transform(np.hstack([y_val, X_val[:, -1, :]]))[:, 0]
+                model.fit(X_tr, y_tr, epochs=epochs, batch_size=batch_size, verbose=0)
+                y_val_pred_scaled = model.predict(X_val)
+                y_val_pred = scaler_y.inverse_transform(y_val_pred_scaled)
+                y_val_actual = scaler_y.inverse_transform(y_val)
                 for metric in st.session_state.selected_metrics:
-                    cv_metrics[metric].append(all_metrics_dict[metric](y_val_actual, y_val_pred))
+                    cv_metrics[metric].append(all_metrics_dict[metric](y_val_actual.flatten(), y_val_pred.flatten()))
             st.session_state.cv_metrics = {m: np.mean(cv_metrics[m]) for m in st.session_state.selected_metrics}
             st.write("Cross-Validation Results:", st.session_state.cv_metrics)
 
@@ -639,97 +618,55 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     new_df[date_col] = pd.to_datetime(new_df[date_col])
                     new_df = new_df.sort_values(date_col)
                 
-                input_vars = st.session_state.input_vars
-                output_var = st.session_state.output_var
-                num_lags = st.session_state.num_lags
-                feature_cols = st.session_state.feature_cols
-                
-                available_new_inputs = [col for col in new_df.columns if col in input_vars and col != date_col]
-                if not available_new_inputs:
-                    st.error(f"No recognized input variables in {new_data_file.name}. Include: " + ", ".join(input_vars))
+                if st.session_state.output_var not in new_df.columns:
+                    st.error(f"New data must include the output variable '{st.session_state.output_var}' for creating lagged features.")
                     continue
-                selected_inputs = st.multiselect(f"🔧 Input Variables ({new_data_file.name})", available_new_inputs, 
-                                                default=available_new_inputs, key=f"new_input_vars_{new_data_file.name}")
                 
-                st.markdown(f"**Variable Types ({new_data_file.name})**")
-                new_var_types = {}
-                for var in selected_inputs:
-                    new_var_types[var] = st.selectbox(f"{var} Type", ["Dynamic", "Static"], key=f"new_{var}_type_{new_data_file.name}")
+                if len(new_df) < st.session_state.num_lags:
+                    st.error(f"New data must have at least {st.session_state.num_lags} rows for lagging.")
+                    continue
                 
-                if st.button(f"🔍 Predict ({new_data_file.name})", key=f"predict_button_{new_data_file.name}"):
-                    if len(new_df) < (num_lags + 1 if any(new_var_types[var] == "Dynamic" for var in selected_inputs) else 1):
-                        st.error(f"{new_data_file.name} has insufficient rows for {num_lags} lags.")
-                        continue
-                    
-                    feature_cols_new = []
-                    for var in selected_inputs:
-                        if new_var_types[var] == "Dynamic":
-                            for lag in range(1, num_lags + 1):
-                                new_df[f'{var}_Lag_{lag}'] = new_df[var].shift(lag)
-                                feature_cols_new.append(f'{var}_Lag_{lag}')
-                        else:
-                            feature_cols_new.append(var)
-                    for lag in range(1, num_lags + 1):
-                        new_df[f'{output_var}_Lag_{lag}'] = new_df[output_var].shift(lag) if output_var in new_df.columns else 0
-                        feature_cols_new.append(f'{output_var}_Lag_{lag}')
-                    
-                    new_df = new_df.dropna()
-                    full_new_df = pd.DataFrame(index=new_df.index, columns=feature_cols + [output_var])
-                    full_new_df[output_var] = new_df[output_var] if output_var in new_df.columns else 0
-                    for col in feature_cols_new:
-                        if col in full_new_df.columns and col in new_df.columns:
-                            full_new_df[col] = new_df[col]
-                    full_new_df.fillna(full_new_df.median(), inplace=True)
-                    
-                    scaler = st.session_state.scaler
-                    new_scaled = scaler.transform(full_new_df[feature_cols + [output_var]])
-                    X_new = new_scaled[:, :-1]
-                    X_new = X_new.reshape((X_new.shape[0], num_lags, len(feature_cols) // num_lags))
-                    
-                    layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
-                              st.session_state.lstm_layers if model_type == "LSTM" else 
-                              st.session_state.rnn_layers if model_type == "RNN" else 
-                              st.session_state.gru_layers)
-                    units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
-                             st.session_state.lstm_units if model_type == "LSTM" else 
-                             st.session_state.rnn_units if model_type == "RNN" else 
-                             st.session_state.gru_units)
-                    if st.session_state.model is None:
-                        st.session_state.model = build_model(
-                            (X_new.shape[1], X_new.shape[2]), 
-                            model_type, 
-                            layers, 
-                            units, 
-                            st.session_state.dense_layers, 
-                            st.session_state.dense_units, 
-                            st.session_state.learning_rate
-                        )
-                        st.session_state.model.load_weights(MODEL_WEIGHTS_PATH)
-                    y_new_pred = st.session_state.model.predict(X_new)
-                    y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred, X_new[:, -1, :]]))[:, 0]
-                    y_new_pred = np.clip(y_new_pred, 0, None)
-                    
-                    dates = new_df[date_col] if date_col != "None" else pd.RangeIndex(len(new_df))
-                    new_predictions_df = pd.DataFrame({
-                        "Date": dates[-len(y_new_pred):],
-                        f"Predicted_{output_var}": y_new_pred
-                    })
-                    st.session_state[f"new_predictions_df_{new_data_file.name}"] = new_predictions_df
-                    
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(x=dates[-len(y_new_pred):], y=y_new_pred, name="Predicted", line=dict(color="#ff7f0e")))
-                    fig.update_layout(title=f"New Predictions: {output_var} ({new_data_file.name})", xaxis_title="Date", yaxis_title=output_var)
-                    st.plotly_chart(fig, use_container_width=True)
-                    buf = BytesIO()
-                    try:
-                        fig.write_image(buf, format="png")
-                    except ValueError:
-                        fig_alt, ax = plt.subplots()
-                        ax.plot(dates[-len(y_new_pred):], y_new_pred, label="Predicted")
-                        ax.legend()
-                        ax.set_title(f"New Predictions: {output_var}")
-                        fig_alt.savefig(buf, format="png", bbox_inches="tight")
-                    st.download_button(f"⬇️ Download Plot ({new_data_file.name})", buf.getvalue(), f"new_prediction_{new_data_file.name}.png", "image/png")
-                    new_csv = new_predictions_df.to_csv(index=False)
-                    st.download_button(f"⬇️ Download CSV ({new_data_file.name})", new_csv, f"new_predictions_{new_data_file.name}.csv", "text/csv")
-                    st.success(f"Predictions for {new_data_file.name} generated successfully!")
+                # Create lagged features
+                feature_cols = st.session_state.feature_cols
+                for col in feature_cols:
+                    if "_Lag_" in col:
+                        var, lag = col.split("_Lag_")
+                        lag = int(lag)
+                        new_df[col] = new_df[var].shift(lag)
+                
+                # Drop rows with NaN lags
+                new_df = new_df.dropna(subset=feature_cols)
+                
+                # Scale the input features
+                X_new = st.session_state.scaler_X.transform(new_df[feature_cols])
+                X_new = X_new.reshape((X_new.shape[0], 1, X_new.shape[1]))
+                
+                # Predict
+                y_new_pred_scaled = st.session_state.model.predict(X_new)
+                y_new_pred = st.session_state.scaler_y.inverse_transform(y_new_pred_scaled)
+                y_new_pred = np.clip(y_new_pred, 0, None)
+                
+                dates = new_df[date_col] if date_col != "None" else pd.RangeIndex(len(new_df))
+                new_predictions_df = pd.DataFrame({
+                    "Date": dates.values,
+                    f"Predicted_{st.session_state.output_var}": y_new_pred.flatten()
+                })
+                st.session_state[f"new_predictions_df_{new_data_file.name}"] = new_predictions_df
+                
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=dates.values, y=y_new_pred.flatten(), name="Predicted", line=dict(color="#ff7f0e")))
+                fig.update_layout(title=f"New Predictions: {st.session_state.output_var} ({new_data_file.name})", xaxis_title="Date", yaxis_title=st.session_state.output_var)
+                st.plotly_chart(fig, use_container_width=True)
+                buf = BytesIO()
+                try:
+                    fig.write_image(buf, format="png")
+                except ValueError:
+                    fig_alt, ax = plt.subplots()
+                    ax.plot(dates.values, y_new_pred.flatten(), label="Predicted")
+                    ax.legend()
+                    ax.set_title(f"New Predictions: {st.session_state.output_var}")
+                    fig_alt.savefig(buf, format="png", bbox_inches="tight")
+                st.download_button(f"⬇️ Download Plot ({new_data_file.name})", buf.getvalue(), f"new_prediction_{new_data_file.name}.png", "image/png")
+                new_csv = new_predictions_df.to_csv(index=False)
+                st.download_button(f"⬇️ Download CSV ({new_data_file.name})", new_csv, f"new_predictions_{new_data_file.name}.csv", "text/csv")
+                st.success(f"Predictions for {new_data_file.name} generated successfully!")
