@@ -26,6 +26,9 @@ from scipy import stats
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+# Set page config as the first Streamlit command
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+
 # AdMob Configuration
 ADMOB_APP_ID = "ca-app-pub-2264561932019289~4419184202"
 ADMOB_TOP_AD_UNIT_ID = "ca-app-pub-2264561932019289/9782119699"
