@@ -22,7 +22,13 @@ import warnings
 import optuna
 from scipy import stats
 
-# Set page config - MUST be the first Streamlit command
+# Check for ads.txt request first - MUST be before any other Streamlit commands
+query_params = st.experimental_get_query_params()
+if 'ads.txt' in query_params or st.experimental_get_query_params().get('_stcore_path_', [None])[0] == 'ads.txt':
+    st.write("google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0")
+    st.stop()
+
+# Set page config - Must be the first Streamlit command after ads.txt check
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
 # Suppress all warnings
@@ -41,22 +47,6 @@ st.markdown("""
     </head>
     </html>
 """, unsafe_allow_html=True)
-
-# AdSense Configuration
-def serve_ads_txt():
-    """Serve ads.txt content for both /ads.txt and /?ads.txt requests"""
-    query_params = st.experimental_get_query_params()
-    request_path = st.experimental_get_query_params().get('_stcore_path_', [None])[0]
-    
-    # Check for both /ads.txt and /?ads.txt requests
-    if ('ads.txt' in query_params or 
-        (request_path and request_path.endswith('ads.txt')) or 
-        (request_path and request_path == 'ads.txt')):
-        st.text("google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0")
-        st.stop()
-
-# Check for ads.txt request first
-serve_ads_txt()
 
 # Simplified uncertainty estimation without TFP
 def get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units, 
