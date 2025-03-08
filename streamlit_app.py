@@ -1180,17 +1180,6 @@ with col2:
                             # Run optimization with progress bar
                             progress_bar = st.progress(0)
                             for i in range(8):
-                                # Ensure predictions have correct shape before inverse transform
-                                y_val_pred_mean = y_val_pred_mean.reshape(-1, 1)
-                                X_val_reshaped = X_val[:, 0, :].reshape(y_val_pred_mean.shape[0], -1)
-                                
-                                # Ensure arrays have matching first dimensions
-                                min_len = min(len(y_val_pred_mean), len(X_val_reshaped))
-                                y_val_pred = scaler.inverse_transform(np.hstack([
-                                    y_val_pred_mean[:min_len],
-                                    X_val_reshaped[:min_len]
-                                ]))[:, 0]
-                                
                                 study.optimize(lambda trial: objective(
                                     trial, 
                                     X_train_opt, 
