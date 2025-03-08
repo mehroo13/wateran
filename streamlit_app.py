@@ -22,6 +22,9 @@ import warnings
 import optuna
 from scipy import stats
 
+# Set page config first
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+
 # Add AdMob banner ads HTML
 TOP_BANNER_HTML = """
 <div style="display: flex; justify-content: center; margin: 10px 0;">
