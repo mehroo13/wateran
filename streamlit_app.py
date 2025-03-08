@@ -22,18 +22,6 @@ import warnings
 import optuna
 from scipy import stats
 
-# Set page config first
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
-
-# Add AdSense verification meta tag and script
-st.markdown("""
-    <head>
-        <meta name="google-adsense-account" content="ca-pub-2264561932019289">
-        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289"
-        crossorigin="anonymous"></script>
-    </head>
-""", unsafe_allow_html=True)
-
 # Suppress all warnings
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -613,6 +601,9 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
         raise optuna.exceptions.TrialPruned(f"Trial failed: {str(e)}")
 
 # -------------------- Styling and Streamlit UI --------------------
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+
+# Theme toggle
 with st.sidebar:
     st.title("🌊 Wateran")
     theme = st.selectbox("Theme", ["Light", "Dark"])
@@ -673,21 +664,6 @@ with st.sidebar:
 
 st.title("🌊 Wateran: Advanced Time Series Prediction")
 st.markdown("**State-of-the-art Time Series Prediction with Uncertainty Quantification**", unsafe_allow_html=True)
-
-# Insert AdSense ad unit
-st.markdown("""
-    <div style="margin: 20px 0;">
-        <ins class="adsbygoogle"
-             style="display:block"
-             data-ad-client="ca-pub-2264561932019289"
-             data-ad-slot="6164608194"
-             data-ad-format="auto"
-             data-full-width-responsive="true"></ins>
-        <script>
-             (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-""", unsafe_allow_html=True)
 
 # Initialize session state variables
 if 'model_type' not in st.session_state:
@@ -1870,18 +1846,3 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     st.dataframe(predictions_df, use_container_width=True)
                     
                     st.success(f"Analysis completed successfully for {new_data_file.name}!")
-
-                    # Insert bottom AdSense ad unit
-                    st.markdown("""
-                        <div style="margin: 20px 0;">
-                            <ins class="adsbygoogle"
-                                 style="display:block"
-                                 data-ad-client="ca-pub-2264561932019289"
-                                 data-ad-slot="6164608194"
-                                 data-ad-format="auto"
-                                 data-full-width-responsive="true"></ins>
-                            <script>
-                                 (adsbygoogle = window.adsbygoogle || []).push({});
-                            </script>
-                        </div>
-                    """, unsafe_allow_html=True)
