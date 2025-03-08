@@ -107,6 +107,88 @@ if 'df' not in st.session_state:
     st.session_state.df = None
 if 'feature_cols' not in st.session_state:
     st.session_state.feature_cols = []
+if 'handle_missing' not in st.session_state:
+    st.session_state.handle_missing = 'median'
+if 'remove_outliers' not in st.session_state:
+    st.session_state.remove_outliers = True
+if 'outlier_threshold' not in st.session_state:
+    st.session_state.outlier_threshold = 3.0
+if 'enable_feature_engineering' not in st.session_state:
+    st.session_state.enable_feature_engineering = True
+if 'physics_weight' not in st.session_state:
+    st.session_state.physics_weight = DEFAULT_PHYSICS_WEIGHT
+if 'use_mass_conservation' not in st.session_state:
+    st.session_state.use_mass_conservation = True
+if 'use_smoothness' not in st.session_state:
+    st.session_state.use_smoothness = True
+if 'use_attention' not in st.session_state:
+    st.session_state.use_attention = False
+if 'use_bidirectional' not in st.session_state:
+    st.session_state.use_bidirectional = False
+if 'use_residual' not in st.session_state:
+    st.session_state.use_residual = False
+if 'dropout_rate' not in st.session_state:
+    st.session_state.dropout_rate = 0.2
+if 'prediction_horizon' not in st.session_state:
+    st.session_state.prediction_horizon = DEFAULT_PREDICTION_HORIZON
+if 'num_samples' not in st.session_state:
+    st.session_state.num_samples = 100
+if 'gru_layers' not in st.session_state:
+    st.session_state.gru_layers = 1
+if 'lstm_layers' not in st.session_state:
+    st.session_state.lstm_layers = 1
+if 'rnn_layers' not in st.session_state:
+    st.session_state.rnn_layers = 1
+if 'dense_layers' not in st.session_state:
+    st.session_state.dense_layers = 1
+if 'gru_units' not in st.session_state:
+    st.session_state.gru_units = [DEFAULT_GRU_UNITS]
+if 'lstm_units' not in st.session_state:
+    st.session_state.lstm_units = [DEFAULT_LSTM_UNITS]
+if 'rnn_units' not in st.session_state:
+    st.session_state.rnn_units = [DEFAULT_RNN_UNITS]
+if 'dense_units' not in st.session_state:
+    st.session_state.dense_units = [DEFAULT_DENSE_UNITS]
+if 'learning_rate' not in st.session_state:
+    st.session_state.learning_rate = DEFAULT_LEARNING_RATE
+if 'hybrid_models' not in st.session_state:
+    st.session_state.hybrid_models = ["GRU"]
+if 'metrics' not in st.session_state:
+    st.session_state.metrics = None
+if 'train_results_df' not in st.session_state:
+    st.session_state.train_results_df = None
+if 'test_results_df' not in st.session_state:
+    st.session_state.test_results_df = None
+if 'fig' not in st.session_state:
+    st.session_state.fig = None
+if 'model_plot' not in st.session_state:
+    st.session_state.model_plot = None
+if 'scaler' not in st.session_state:
+    st.session_state.scaler = None
+if 'new_predictions_df' not in st.session_state:
+    st.session_state.new_predictions_df = None
+if 'new_fig' not in st.session_state:
+    st.session_state.new_fig = None
+if 'selected_inputs' not in st.session_state:
+    st.session_state.selected_inputs = None
+if 'new_date_col' not in st.session_state:
+    st.session_state.new_date_col = None
+if 'selected_metrics' not in st.session_state:
+    st.session_state.selected_metrics = None
+if 'new_var_types' not in st.session_state:
+    st.session_state.new_var_types = None
+if 'cv_metrics' not in st.session_state:
+    st.session_state.cv_metrics = None
+if 'X_train' not in st.session_state:
+    st.session_state.X_train = None
+if 'y_train' not in st.session_state:
+    st.session_state.y_train = None
+if 'X_test' not in st.session_state:
+    st.session_state.X_test = None
+if 'y_test' not in st.session_state:
+    st.session_state.y_test = None
+if 'model' not in st.session_state:
+    st.session_state.model = None
 
 # Sidebar for Navigation and Help
 with st.sidebar:
