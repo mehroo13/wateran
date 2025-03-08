@@ -36,46 +36,18 @@ if ('ads.txt' in query_params or
     st.text("google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0")
     st.stop()
 
-# Set page config - Must be the first Streamlit command after ads.txt check
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+# Add AdSense verification meta tag and script
+st.markdown("""
+    <head>
+        <meta name="google-adsense-account" content="ca-pub-2264561932019289">
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289"
+        crossorigin="anonymous"></script>
+    </head>
+""", unsafe_allow_html=True)
 
 # Suppress all warnings
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-# Add AdSense verification meta tag and script
-st.markdown("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="google-adsense-account" content="ca-pub-2264561932019289">
-        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289"
-        crossorigin="anonymous"></script>
-        <title>Wateran: Advanced Time Series Prediction</title>
-    </head>
-    </html>
-""", unsafe_allow_html=True)
-
-# Add ad unit after title
-st.title("🌊 Wateran: Advanced Time Series Prediction")
-st.markdown("**State-of-the-art Time Series Prediction with Uncertainty Quantification**", unsafe_allow_html=True)
-
-# Insert AdSense ad unit
-st.markdown("""
-    <div style="margin: 20px 0;">
-        <ins class="adsbygoogle"
-             style="display:block"
-             data-ad-client="ca-pub-2264561932019289"
-             data-ad-slot="6164608194"
-             data-ad-format="auto"
-             data-full-width-responsive="true"></ins>
-        <script>
-             (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-""", unsafe_allow_html=True)
 
 # Simplified uncertainty estimation without TFP
 def get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units, 
@@ -652,6 +624,8 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
         raise optuna.exceptions.TrialPruned(f"Trial failed: {str(e)}")
 
 # -------------------- Styling and Streamlit UI --------------------
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+
 # Theme toggle
 with st.sidebar:
     st.title("🌊 Wateran")
@@ -710,6 +684,24 @@ with st.sidebar:
             }
             </style>
         """, unsafe_allow_html=True)
+
+st.title("🌊 Wateran: Advanced Time Series Prediction")
+st.markdown("**State-of-the-art Time Series Prediction with Uncertainty Quantification**", unsafe_allow_html=True)
+
+# Insert AdSense ad unit
+st.markdown("""
+    <div style="margin: 20px 0;">
+        <ins class="adsbygoogle"
+             style="display:block"
+             data-ad-client="ca-pub-2264561932019289"
+             data-ad-slot="6164608194"
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
+        <script>
+             (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+    </div>
+""", unsafe_allow_html=True)
 
 # Initialize session state variables
 if 'model_type' not in st.session_state:
@@ -908,7 +900,7 @@ with col2:
     num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=DEFAULT_NUM_LAGS if 'num_lags' not in st.session_state else st.session_state.num_lags, step=1)
     st.session_state.num_lags = num_lags
     
-    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, key="epochs")
+    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=1, key="epochs")
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8, key="batch_size")
     train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT, key="train_split") / 100
     
@@ -1587,62 +1579,7 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
             test_csv = st.session_state.test_results_df.to_csv(index=False)
             st.download_button("⬇️ Download Test Data CSV", test_csv, "test_predictions.csv", "text/csv", key="test_dl")
         
-        if st.button("🗺️ Show Model Architecture", key="arch_button"):
-            try:
-                # Create a sample input shape
-                input_shape = (1, len(st.session_state.feature_cols))
-                
-                # Get current model parameters based on model type
-                layers = (st.session_state.gru_layers if model_type == "GRU" else 
-                          st.session_state.lstm_layers if model_type == "LSTM" else 
-                          st.session_state.rnn_layers if model_type == "RNN" else 
-                          st.session_state.gru_layers)
-                
-                units = (st.session_state.gru_units if model_type == "GRU" else 
-                         st.session_state.lstm_units if model_type == "LSTM" else 
-                         st.session_state.rnn_units if model_type == "RNN" else 
-                         st.session_state.gru_units)
-                
-                # Build a fresh model for visualization
-                viz_model = build_advanced_model(
-                    input_shape=input_shape,
-                    model_type=model_type,
-                    layers=layers,
-                    units=units,
-                    dense_layers=st.session_state.dense_layers,
-                    dense_units=st.session_state.dense_units,
-                    learning_rate=st.session_state.learning_rate,
-                    use_attention=st.session_state.use_attention,
-                    use_bidirectional=st.session_state.use_bidirectional,
-                    use_residual=st.session_state.use_residual,
-                    dropout_rate=st.session_state.dropout_rate
-                )
-                
-                # Try using plot_model
-                plot_model(viz_model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
-                st.image(MODEL_PLOT_PATH, caption=f"{model_type} Model Architecture")
-                
-                # Clean up
-                tf.keras.backend.clear_session()
-                
-            except ImportError:
-                st.error("Graphviz is not installed. Please install it using:")
-                st.code("""
-pip install pydot
-# Then install Graphviz using one of:
-apt-get install graphviz  # Linux
-brew install graphviz    # macOS
-winget install graphviz  # Windows
-                """)
-                
-                # Show text summary as fallback
-                if st.session_state.model is not None:
-                    st.write("### Model Architecture Summary (Text Version)")
-                    stringlist = []
-                    st.session_state.model.summary(print_fn=lambda x: stringlist.append(x))
-                    st.text("\n".join(stringlist))
-
-# New Data Prediction Section
+        # New Data Prediction Section
 if os.path.exists(MODEL_WEIGHTS_PATH):
     with st.expander("🔮 New Predictions", expanded=False):
         st.subheader("Predict New Data", divider="blue")
@@ -1802,20 +1739,18 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         st.session_state.num_samples
                     )
                     
-                    # Reshape predictions and features to match dimensions
-                    y_new_pred_mean = y_new_pred_mean.reshape(-1, 1)  # Make it 2D
-                    X_new_2d = X_new[:, 0, :].reshape(X_new.shape[0], -1)  # Convert 3D to 2D
+                    # Reshape predictions to match dimensions
+                    y_new_pred_mean = y_new_pred_mean.reshape(-1, 1)  # Reshape to 2D array
+                    X_new_2d = X_new[:, 0, :].reshape(y_new_pred_mean.shape[0], -1)  # Ensure matching dimensions
                     
                     # Ensure arrays have matching first dimensions
                     min_len = min(len(y_new_pred_mean), len(X_new_2d))
                     y_new_pred_mean = y_new_pred_mean[:min_len]
                     X_new_2d = X_new_2d[:min_len]
-                    y_new_pred_std = y_new_pred_std[:min_len]
                     
-                    # Stack arrays horizontally and inverse transform
-                    stacked_arrays = np.hstack([y_new_pred_mean, X_new_2d])
-                    y_new_pred = scaler.inverse_transform(stacked_arrays)[:, 0]
-                    y_new_pred = np.clip(y_new_pred, 0, None)  # Ensure non-negative predictions
+                    # Inverse transform predictions
+                    y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred_mean, X_new_2d]))[:, 0]
+                    y_new_pred = np.clip(y_new_pred, 0, None)
                     
                     # Create results DataFrame
                     dates = new_df[date_col] if date_col != "None" else pd.RangeIndex(len(new_df))
@@ -1950,17 +1885,17 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     
                     st.success(f"Analysis completed successfully for {new_data_file.name}!")
 
-# Add bottom ad unit
-st.markdown("""
-    <div style="margin: 20px 0;">
-        <ins class="adsbygoogle"
-             style="display:block"
-             data-ad-client="ca-pub-2264561932019289"
-             data-ad-slot="6164608194"
-             data-ad-format="auto"
-             data-full-width-responsive="true"></ins>
-        <script>
-             (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-""", unsafe_allow_html=True)
+                    # Insert bottom AdSense ad unit
+                    st.markdown("""
+                        <div style="margin: 20px 0;">
+                            <ins class="adsbygoogle"
+                                 style="display:block"
+                                 data-ad-client="ca-pub-2264561932019289"
+                                 data-ad-slot="6164608194"
+                                 data-ad-format="auto"
+                                 data-full-width-responsive="true"></ins>
+                            <script>
+                                 (adsbygoogle = window.adsbygoogle || []).push({});
+                            </script>
+                        </div>
+                    """, unsafe_allow_html=True)
