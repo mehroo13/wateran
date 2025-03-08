@@ -22,6 +22,27 @@ import warnings
 import optuna
 from scipy import stats
 
+# Define constants
+DEFAULT_GRU_UNITS = 64
+DEFAULT_LSTM_UNITS = 64
+DEFAULT_RNN_UNITS = 64
+DEFAULT_PINN_UNITS = 128
+DEFAULT_DENSE_UNITS = 32
+DEFAULT_LEARNING_RATE = 0.001
+DEFAULT_EPOCHS = 50
+DEFAULT_BATCH_SIZE = 16
+DEFAULT_TRAIN_SPLIT = 80
+DEFAULT_NUM_LAGS = 3
+DEFAULT_PREDICTION_HORIZON = 7
+DEFAULT_PHYSICS_WEIGHT = 0.1
+MODEL_WEIGHTS_PATH = os.path.join(tempfile.gettempdir(), "model_weights.weights.h5")
+MODEL_FULL_PATH = os.path.join(tempfile.gettempdir(), "model.h5")
+MODEL_PLOT_PATH = os.path.join(tempfile.gettempdir(), "model_plot.png")
+DEFAULT_MODEL_SAVE_PATH = "model_saved.h5"
+DEFAULT_TRAIN_CSV_PATH = "train_results.csv"
+DEFAULT_TEST_CSV_PATH = "test_results.csv"
+TENSORBOARD_DIR = os.path.join(tempfile.gettempdir(), "tensorboard_logs")
+
 # Set page config first
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
