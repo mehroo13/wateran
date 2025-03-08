@@ -592,38 +592,62 @@ def evaluate_model_advanced(model, X_test, y_test, scaler, feature_cols):
 # -------------------- Advanced Hyperparameter Optimization --------------------
 def objective(trial, X_train, y_train, X_val, y_val, model_type):
     """Objective function for Optuna hyperparameter optimization."""
+    import tensorflow as tf
+    
+    # Clear any existing TensorFlow session state
+    tf.keras.backend.clear_session()
+    
     # Define hyperparameters to optimize with more focused ranges
     hp = {
-        'learning_rate': trial.suggest_loguniform('learning_rate', 1e-4, 1e-2),  # Narrowed range
-        'num_layers': trial.suggest_int('num_layers', 1, 3),  # Reduced max layers
-        'units': trial.suggest_int('units', 32, 128),  # Reduced max units
-        'dropout_rate': trial.suggest_uniform('dropout_rate', 0.1, 0.3),  # Narrowed range
-        'batch_size': trial.suggest_categorical('batch_size', [32, 64])  # Reduced options
+        'learning_rate': trial.suggest_loguniform('learning_rate', 1e-4, 1e-2),
+        'num_layers': trial.suggest_int('num_layers', 1, 3),
+        'units': trial.suggest_int('units', 32, 128),
+        'dropout_rate': trial.suggest_uniform('dropout_rate', 0.1, 0.3),
+        'batch_size': trial.suggest_categorical('batch_size', [32, 64])
     }
     
-    # Build and train model
-    model = build_advanced_model(
-        input_shape=(X_train.shape[1], X_train.shape[2]),
-        model_type=model_type,
-        layers=hp['num_layers'],
-        units=[hp['units']] * hp['num_layers'],
-        dense_layers=1,  # Simplified architecture
-        dense_units=[32],
-        learning_rate=hp['learning_rate'],
-        dropout_rate=hp['dropout_rate']
-    )
+    try:
+        # Build model with error handling
+        model = build_advanced_model(
+            input_shape=(X_train.shape[1], X_train.shape[2]),
+            model_type=model_type,
+            layers=hp['num_layers'],
+            units=[hp['units']] * hp['num_layers'],
+            dense_layers=1,
+            dense_units=[32],
+            learning_rate=hp['learning_rate'],
+            dropout_rate=hp['dropout_rate']
+        )
+        
+        # Train model with reduced epochs and earlier stopping
+        early_stopping = tf.keras.callbacks.EarlyStopping(
+            monitor='val_loss',
+            patience=5,
+            restore_best_weights=True
+        )
+        
+        history = model.fit(
+            X_train, y_train,
+            validation_data=(X_val, y_val),
+            epochs=20,
+            batch_size=hp['batch_size'],
+            callbacks=[early_stopping],
+            verbose=0
+        )
+        
+        # Get the best validation loss
+        best_val_loss = min(history.history['val_loss'])
+        
+        # Clean up
+        del model
+        tf.keras.backend.clear_session()
+        
+        return best_val_loss
     
-    # Train model with reduced epochs and earlier stopping
-    history = model.fit(
-        X_train, y_train,
-        validation_data=(X_val, y_val),
-        epochs=20,  # Reduced epochs
-        batch_size=hp['batch_size'],
-        callbacks=[EarlyStopping(patience=5)],  # Reduced patience
-        verbose=0
-    )
-    
-    return history.history['val_loss'][-1]
+    except Exception as e:
+        # Clean up on error
+        tf.keras.backend.clear_session()
+        raise optuna.exceptions.TrialPruned(f"Trial failed: {str(e)}")
 
 # -------------------- Styling and Streamlit UI --------------------
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
@@ -1163,62 +1187,73 @@ with col2:
                     st.error("Please train the model first to generate training data.")
                 else:
                     with st.spinner("Optimizing hyperparameters... This may take a few minutes."):
-                        # Create validation split
-                        val_size = int(len(st.session_state.X_train) * 0.2)
-                        
-                        # Use a subset of data for faster optimization
-                        max_samples = 1000  # Limit number of samples
-                        if len(st.session_state.X_train) > max_samples:
-                            step = len(st.session_state.X_train) // max_samples
-                            X_train_subset = st.session_state.X_train[::step]
-                            y_train_subset = st.session_state.y_train[::step]
-                        else:
-                            X_train_subset = st.session_state.X_train
-                            y_train_subset = st.session_state.y_train
-                        
-                        val_size = int(len(X_train_subset) * 0.2)
-                        X_val = X_train_subset[-val_size:]
-                        y_val = y_train_subset[-val_size:]
-                        X_train_opt = X_train_subset[:-val_size]
-                        y_train_opt = y_train_subset[:-val_size]
-                        
-                        # Create study with faster sampler
-                        study = optuna.create_study(
-                            direction='minimize',
-                            sampler=optuna.samplers.TPESampler(n_startup_trials=5)
-                        )
-                        
-                        # Run optimization with progress bar
-                        progress_bar = st.progress(0)
-                        for i in range(8):  # Reduced number of trials
-                            study.optimize(lambda trial: objective(
-                                trial, 
-                                X_train_opt, 
-                                y_train_opt, 
-                                X_val, 
-                                y_val, 
-                                st.session_state.model_type
-                            ), n_trials=1)
-                            progress_bar.progress((i + 1) / 8)
-                        
-                        st.write("Best hyperparameters:", study.best_params)
-                        st.write("Best validation loss:", study.best_value)
-                        
-                        # Update model with best hyperparameters
-                        best_params = study.best_params
-                        st.session_state.learning_rate = best_params['learning_rate']
-                        st.session_state.dropout_rate = best_params['dropout_rate']
-                        
-                        if st.session_state.model_type in ["GRU", "Hybrid"]:
-                            st.session_state.gru_layers = best_params['num_layers']
-                            st.session_state.gru_units = [best_params['units']] * best_params['num_layers']
-                        elif st.session_state.model_type == "LSTM":
-                            st.session_state.lstm_layers = best_params['num_layers']
-                            st.session_state.lstm_units = [best_params['units']] * best_params['num_layers']
-                        elif st.session_state.model_type == "RNN":
-                            st.session_state.rnn_layers = best_params['num_layers']
-                            st.session_state.rnn_units = [best_params['units']] * best_params['num_layers']
-
+                        try:
+                            # Clear any existing TensorFlow session state
+                            tf.keras.backend.clear_session()
+                            
+                            # Create validation split
+                            val_size = int(len(st.session_state.X_train) * 0.2)
+                            
+                            # Use a subset of data for faster optimization
+                            max_samples = 1000
+                            if len(st.session_state.X_train) > max_samples:
+                                step = len(st.session_state.X_train) // max_samples
+                                X_train_subset = st.session_state.X_train[::step]
+                                y_train_subset = st.session_state.y_train[::step]
+                            else:
+                                X_train_subset = st.session_state.X_train
+                                y_train_subset = st.session_state.y_train
+                            
+                            val_size = int(len(X_train_subset) * 0.2)
+                            X_val = X_train_subset[-val_size:]
+                            y_val = y_train_subset[-val_size:]
+                            X_train_opt = X_train_subset[:-val_size]
+                            y_train_opt = y_train_subset[:-val_size]
+                            
+                            # Create study with faster sampler
+                            study = optuna.create_study(
+                                direction='minimize',
+                                sampler=optuna.samplers.TPESampler(n_startup_trials=5)
+                            )
+                            
+                            # Run optimization with progress bar
+                            progress_bar = st.progress(0)
+                            for i in range(8):
+                                study.optimize(lambda trial: objective(
+                                    trial, 
+                                    X_train_opt, 
+                                    y_train_opt, 
+                                    X_val, 
+                                    y_val, 
+                                    st.session_state.model_type
+                                ), n_trials=1)
+                                progress_bar.progress((i + 1) / 8)
+                            
+                            st.write("Best hyperparameters:", study.best_params)
+                            st.write("Best validation loss:", study.best_value)
+                            
+                            # Update model with best hyperparameters
+                            best_params = study.best_params
+                            st.session_state.learning_rate = best_params['learning_rate']
+                            st.session_state.dropout_rate = best_params['dropout_rate']
+                            
+                            if st.session_state.model_type in ["GRU", "Hybrid"]:
+                                st.session_state.gru_layers = best_params['num_layers']
+                                st.session_state.gru_units = [best_params['units']] * best_params['num_layers']
+                            elif st.session_state.model_type == "LSTM":
+                                st.session_state.lstm_layers = best_params['num_layers']
+                                st.session_state.lstm_units = [best_params['units']] * best_params['num_layers']
+                            elif st.session_state.model_type == "RNN":
+                                st.session_state.rnn_layers = best_params['num_layers']
+                                st.session_state.rnn_units = [best_params['units']] * best_params['num_layers']
+                            
+                            # Final cleanup
+                            tf.keras.backend.clear_session()
+                            
+                        except Exception as e:
+                            st.error(f"Optimization failed: {str(e)}")
+                            tf.keras.backend.clear_session()
+        
         with col_btn3:
             if st.button("🔍 Test Model", key="test_button"):
                 if not os.path.exists(MODEL_WEIGHTS_PATH):
