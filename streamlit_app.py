@@ -22,13 +22,14 @@ import warnings
 import optuna
 from scipy import stats
 
+# Set page config - MUST be the first Streamlit command
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+
 # Suppress all warnings
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-# Add proper HTML structure with AdSense verification
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
-
+# Add AdSense verification meta tag
 st.markdown("""
     <!DOCTYPE html>
     <html>
@@ -632,26 +633,6 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
         raise optuna.exceptions.TrialPruned(f"Trial failed: {str(e)}")
 
 # -------------------- Styling and Streamlit UI --------------------
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
-
-# Add proper HTML structure with AdSense verification
-st.markdown("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="google-adsense-account" content="ca-pub-2264561932019289">
-        <title>Wateran: Advanced Time Series Prediction</title>
-    </head>
-    </html>
-""", unsafe_allow_html=True)
-
-# Serve ads.txt content
-if 'ads.txt' in st.experimental_get_query_params():
-    st.write("google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0")
-    st.stop()
-
 # Theme toggle
 with st.sidebar:
     st.title("🌊 Wateran")
