@@ -393,11 +393,9 @@ def engineer_features(df, feature_cols, output_var, date_col=None):
                 engineered_df['day'] = engineered_df[date_col].dt.day
                 engineered_df['month'] = engineered_df[date_col].dt.month
                 engineered_df['day_of_week'] = engineered_df[date_col].dt.dayofweek
-                # Fix the is_weekend calculation
                 weekend_mask = engineered_df['day_of_week'].isin([5, 6])
                 engineered_df['is_weekend'] = weekend_mask.astype(int)
-            except Exception as e:
-                print(f"Time feature engineering error: {str(e)}")
+            except:
                 pass
         
         # Rolling statistics
@@ -408,8 +406,7 @@ def engineer_features(df, feature_cols, output_var, date_col=None):
                     if base_var in engineered_df.columns:
                         engineered_df[f'{base_var}_rolling_mean_3'] = engineered_df[base_var].rolling(window=3, min_periods=1).mean()
                         engineered_df[f'{base_var}_rolling_std_3'] = engineered_df[base_var].rolling(window=3, min_periods=1).std()
-                except Exception as e:
-                    print(f"Rolling stats error for {var}: {str(e)}")
+                except:
                     pass
         
         # Interaction features - limit to avoid explosion of features
@@ -423,16 +420,14 @@ def engineer_features(df, feature_cols, output_var, date_col=None):
                     if '_Lag_' not in var1 and '_Lag_' not in var2:
                         if var1 in engineered_df.columns and var2 in engineered_df.columns:
                             engineered_df[f'{var1}_{var2}_interaction'] = engineered_df[var1] * engineered_df[var2]
-                except Exception as e:
-                    print(f"Interaction error for {var1}, {var2}: {str(e)}")
+                except:
                     pass
         
         # Fill NaN values from feature engineering
         engineered_df = engineered_df.fillna(method='bfill').fillna(method='ffill').fillna(0)
         
         return engineered_df
-    except Exception as e:
-        print(f"Feature engineering error: {str(e)}")
+    except:
         return df
 
 # -------------------- Advanced Visualization --------------------
@@ -1502,9 +1497,9 @@ if st.session_state.feature_cols:
                         st.session_state.output_var,
                         st.session_state.date_col
                     )
-                except Exception as e:
-                    st.error(f"Error during feature engineering: {str(e)}")
-                    st.info("Continuing with basic features only.")
+                except:
+                    # Silently continue with basic features
+                    pass
             
             # Scale data
             scaler = MinMaxScaler()  # Create a new scaler for CV
