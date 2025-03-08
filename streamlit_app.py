@@ -22,12 +22,12 @@ import warnings
 import optuna
 from scipy import stats
 
+# Set page config first
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+
 # Suppress all warnings
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-# Set page config FIRST
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
 # AdMob Configuration
 ADMOB_APP_ID = "ca-app-pub-2264561932019289~4419184202"
