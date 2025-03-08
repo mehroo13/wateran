@@ -1,0 +1,154 @@
+# 🌊 Wateran: Advanced Time Series Prediction
+
+A powerful and user-friendly Streamlit application for time series prediction using state-of-the-art deep learning models. Wateran supports various neural network architectures including GRU, LSTM, RNN, and hybrid models, with advanced features for uncertainty quantification and model optimization.
+
+## Features
+
+- **Multiple Model Types**: Choose from GRU, LSTM, RNN, or create hybrid models combining multiple architectures
+- **Advanced Model Features**:
+  - Attention mechanisms for better feature learning
+  - Bidirectional layers for capturing bidirectional dependencies
+  - Residual connections for improved gradient flow
+  - Probabilistic predictions with uncertainty quantification
+- **Flexible Data Input**: Support for Excel, CSV, and JSON files
+- **Advanced Data Preprocessing**:
+  - Multiple missing value handling strategies
+  - Outlier detection and removal
+  - Feature engineering with time-based features
+  - Rolling statistics and interaction features
+- **Dynamic/Static Variables**: Support for both time-dependent and constant features
+- **Advanced Metrics**: RMSE, MAE, R², NSE, KGE, and MAPE for comprehensive model evaluation
+- **Cross-Validation**: Built-in time series cross-validation
+- **Hyperparameter Optimization**: Automated optimization using Optuna
+- **Visualization**:
+  - Interactive plots using Plotly
+  - Training metrics visualization
+  - Prediction plots with confidence intervals
+  - Correlation heatmaps and time series plots
+- **Export Results**: Download predictions, plots, and uncertainty estimates
+- **New Data Prediction**:
+  - Multiple prediction horizons
+  - Monte Carlo sampling for uncertainty estimation
+  - Future predictions with confidence intervals
+- **Theme Support**: Light and dark mode for better user experience
+
+## Installation
+
+1. Clone this repository:
+```bash
+git clone https://github.com/yourusername/wateran.git
+cd wateran
+```
+
+2. Create a virtual environment (recommended):
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+
+1. Start the application:
+```bash
+streamlit run wateran.py
+```
+
+2. Open your web browser and navigate to the URL shown in the terminal (typically http://localhost:8501)
+
+3. Follow the steps in the application:
+   - Upload your training data (Excel, CSV, or JSON file)
+   - Configure data preprocessing options
+   - Enable feature engineering if desired
+   - Select input and output variables
+   - Configure model architecture and training parameters
+   - Train and evaluate the model
+   - Make predictions on new data with uncertainty estimates
+
+## Data Format
+
+Your input file should contain:
+- At least two numeric columns
+- Optional date column
+- Missing values will be handled automatically using your chosen strategy
+- Outliers can be detected and removed using Z-score thresholding
+
+## Model Configuration
+
+- **Architecture**:
+  - Number of recurrent layers (1-5 recommended)
+  - Units per layer
+  - Dense layers for output refinement
+  - Attention mechanism (optional)
+  - Bidirectional layers (optional)
+  - Residual connections (optional)
+  - Dropout rate for regularization
+- **Training**:
+  - Learning rate with scheduling
+  - Batch size
+  - Number of epochs
+  - Early stopping with validation
+  - Model checkpointing
+  - TensorBoard integration
+- **Optimization**:
+  - Automated hyperparameter optimization
+  - Cross-validation for robust evaluation
+  - Multiple evaluation metrics
+
+## Metrics
+
+- **RMSE (Root Mean Square Error)**: Lower is better
+- **MAE (Mean Absolute Error)**: Lower is better
+- **R² (R-squared)**: Closer to 1 is better
+- **NSE (Nash-Sutcliffe Efficiency)**: Closer to 1 is better
+- **KGE (Kling-Gupta Efficiency)**: Closer to 1 is better
+- **MAPE (Mean Absolute Percentage Error)**: Lower is better
+- **Prediction Interval Coverage**: Closer to 0.95 is better
+
+## Advanced Features
+
+### Data Preprocessing
+- Multiple strategies for handling missing values:
+  - Median imputation
+  - Mean imputation
+  - Forward fill
+  - Backward fill
+- Outlier detection using Z-score thresholding
+- Automatic handling of time-based features
+
+### Feature Engineering
+- Time-based features (hour, day, month, day of week)
+- Rolling statistics (mean, standard deviation)
+- Interaction features between variables
+- Automatic handling of lagged features
+
+### Model Architecture
+- Support for attention mechanisms
+- Bidirectional layers for capturing complex dependencies
+- Residual connections for improved training
+- Probabilistic predictions with uncertainty estimation
+
+### Training Process
+- Learning rate scheduling
+- Early stopping with validation
+- Model checkpointing
+- TensorBoard integration for monitoring
+- Automated hyperparameter optimization
+
+### Prediction
+- Multiple prediction horizons
+- Monte Carlo sampling for uncertainty estimation
+- Confidence intervals for predictions
+- Future predictions with uncertainty bounds
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details. 
