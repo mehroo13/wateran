@@ -1766,87 +1766,10 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     st.session_state[f"new_predictions_df_{new_data_file.name}"] = new_predictions_df
                     st.session_state[f"future_predictions_df_{new_data_file.name}"] = future_predictions_df
                     
-                    # Create prediction plot
+                    # Create single plot for predicted discharge
                     fig = go.Figure()
                     
-                    # Historical predictions
-                    fig.add_trace(go.Scatter(
-                        x=dates.values[-len(y_new_pred):],
-                        y=y_new_pred,
-                        name="Historical Predictions",
-                        line=dict(color="#ff7f0e")
-                    ))
-                    
-                    # Future predictions
-                    fig.add_trace(go.Scatter(
-                        x=future_dates,
-                        y=future_predictions,
-                        name="Future Predictions",
-                        line=dict(color="#2ca02c", dash="dash")
-                    ))
-                    
-                    # Confidence intervals
-                    fig.add_trace(go.Scatter(
-                        x=future_dates.tolist() + future_dates[::-1].tolist(),
-                        y=(future_predictions + 1.96 * np.std(future_predictions, axis=0)).tolist() + 
-                          (future_predictions - 1.96 * np.std(future_predictions, axis=0))[::-1].tolist(),
-                        fill='toself',
-                        fillcolor='rgba(44,160,44,0.1)',
-                        line=dict(color='rgba(44,160,44,0)'),
-                        name='95% Confidence Interval'
-                    ))
-                    
-                    fig.update_layout(
-                        title=f"Predictions: {output_var} ({new_data_file.name})",
-                        xaxis_title="Date",
-                        yaxis_title=output_var,
-                        showlegend=True
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Download options
-                    buf = BytesIO()
-                    try:
-                        fig.write_image(buf, format="png")
-                    except ValueError:
-                        fig_alt, ax = plt.subplots()
-                        ax.plot(dates.values[-len(y_new_pred):], y_new_pred, label="Historical Predictions")
-                        ax.plot(future_dates, future_predictions, label="Future Predictions", linestyle="--")
-                        ax.legend()
-                        ax.set_title(f"Predictions: {output_var}")
-                        fig_alt.savefig(buf, format="png", bbox_inches="tight")
-                    
-                    st.download_button(
-                        f"⬇️ Download Plot ({new_data_file.name})",
-                        buf.getvalue(),
-                        f"new_prediction_{new_data_file.name}.png",
-                        "image/png"
-                    )
-                    
-                    # Download predictions
-                    new_csv = new_predictions_df.to_csv(index=False)
-                    st.download_button(
-                        f"⬇️ Download Historical Predictions ({new_data_file.name})",
-                        new_csv,
-                        f"new_predictions_{new_data_file.name}.csv",
-                        "text/csv"
-                    )
-                    
-                    future_csv = future_predictions_df.to_csv(index=False)
-                    st.download_button(
-                        f"⬇️ Download Future Predictions ({new_data_file.name})",
-                        future_csv,
-                        f"future_predictions_{new_data_file.name}.csv",
-                        "text/csv"
-                    )
-                    
-                    st.success(f"Predictions for {new_data_file.name} generated successfully!") 
-
-                    # Create plot of input data
-                    fig = go.Figure()
-                    
-                    # Plot only the predicted discharge from new input
+                    # Plot only the predicted discharge
                     fig.add_trace(go.Scatter(
                         x=dates.values[-len(y_new_pred):],
                         y=y_new_pred,
@@ -1863,17 +1786,20 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Download button for the plot
-                    buf = BytesIO()
-                    fig.write_image(buf, format="png")
-                    st.download_button(
-                        "⬇️ Download Plot",
-                        buf.getvalue(),
-                        f"predicted_{output_var}_{new_data_file.name}.png",
-                        "image/png"
-                    )
+                    # Download buttons
+                    try:
+                        # Save plot as PNG
+                        img_bytes = fig.to_image(format="png")
+                        st.download_button(
+                            "⬇️ Download Plot",
+                            img_bytes,
+                            f"predicted_{output_var}_{new_data_file.name}.png",
+                            "image/png"
+                        )
+                    except Exception as e:
+                        st.warning("Could not generate plot download. You can use the browser's screenshot feature instead.")
                     
-                    # Download button for the predicted data
+                    # Download predicted data
                     predicted_data_df = pd.DataFrame({
                         "Date": dates.values[-len(y_new_pred):],
                         f"Predicted_{output_var}": y_new_pred
@@ -1885,3 +1811,5 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         f"predicted_{output_var}_{new_data_file.name}.csv",
                         "text/csv"
                     )
+                    
+                    st.success(f"Predictions for {new_data_file.name} generated successfully!")
