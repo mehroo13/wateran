@@ -590,7 +590,7 @@ def evaluate_model_advanced(model, X_test, y_test, scaler, feature_cols):
     return metrics, mean_pred, std_pred
 
 # -------------------- Advanced Hyperparameter Optimization --------------------
-def objective(trial):
+def objective(trial, X_train, y_train, X_val, y_val, model_type):
     """Objective function for Optuna hyperparameter optimization."""
     # Define hyperparameters to optimize
     hp = {
@@ -1163,8 +1163,22 @@ with col2:
                     st.error("Please train the model first to generate training data.")
                 else:
                     with st.spinner("Optimizing hyperparameters..."):
+                        # Create validation split
+                        val_size = int(len(st.session_state.X_train) * 0.2)
+                        X_val = st.session_state.X_train[-val_size:]
+                        y_val = st.session_state.y_train[-val_size:]
+                        X_train_opt = st.session_state.X_train[:-val_size]
+                        y_train_opt = st.session_state.y_train[:-val_size]
+                        
                         study = optuna.create_study(direction='minimize')
-                        study.optimize(objective, n_trials=10)
+                        study.optimize(lambda trial: objective(
+                            trial, 
+                            X_train_opt, 
+                            y_train_opt, 
+                            X_val, 
+                            y_val, 
+                            st.session_state.model_type
+                        ), n_trials=10)
                         
                         st.write("Best hyperparameters:", study.best_params)
                         st.write("Best validation loss:", study.best_value)
@@ -1173,15 +1187,14 @@ with col2:
                         best_params = study.best_params
                         st.session_state.learning_rate = best_params['learning_rate']
                         st.session_state.dropout_rate = best_params['dropout_rate']
-                        st.session_state.batch_size = best_params['batch_size']
                         
-                        if model_type in ["GRU", "Hybrid"]:
+                        if st.session_state.model_type in ["GRU", "Hybrid"]:
                             st.session_state.gru_layers = best_params['num_layers']
                             st.session_state.gru_units = [best_params['units']] * best_params['num_layers']
-                        elif model_type == "LSTM":
+                        elif st.session_state.model_type == "LSTM":
                             st.session_state.lstm_layers = best_params['num_layers']
                             st.session_state.lstm_units = [best_params['units']] * best_params['num_layers']
-                        elif model_type == "RNN":
+                        elif st.session_state.model_type == "RNN":
                             st.session_state.rnn_layers = best_params['num_layers']
                             st.session_state.rnn_units = [best_params['units']] * best_params['num_layers']
 
