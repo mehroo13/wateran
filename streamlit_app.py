@@ -862,7 +862,7 @@ with col2:
     num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=DEFAULT_NUM_LAGS if 'num_lags' not in st.session_state else st.session_state.num_lags, step=1)
     st.session_state.num_lags = num_lags
     
-    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, key="epochs")
+    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=1, key="epochs")
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8, key="batch_size")
     train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT, key="train_split") / 100
     
