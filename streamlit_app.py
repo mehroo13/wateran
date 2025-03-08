@@ -1546,8 +1546,36 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
                 st.error("No model available. Please train or test a model first.")
             else:
                 try:
+                    # Rebuild model with current settings to ensure architecture matches selected type
+                    layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
+                              st.session_state.lstm_layers if model_type == "LSTM" else 
+                              st.session_state.rnn_layers if model_type == "RNN" else 
+                              st.session_state.gru_layers)
+                    units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
+                             st.session_state.lstm_units if model_type == "LSTM" else 
+                             st.session_state.rnn_units if model_type == "RNN" else 
+                             st.session_state.gru_units)
+                    
+                    # Get input shape from current model
+                    input_shape = st.session_state.model.input_shape[1:]
+                    
+                    # Build fresh model for visualization
+                    viz_model = build_advanced_model(
+                        input_shape,
+                        model_type,
+                        layers,
+                        units,
+                        st.session_state.dense_layers,
+                        st.session_state.dense_units,
+                        st.session_state.learning_rate,
+                        st.session_state.use_attention,
+                        st.session_state.use_bidirectional,
+                        st.session_state.use_residual,
+                        st.session_state.dropout_rate
+                    )
+                    
                     # Try using plot_model first
-                    plot_model(st.session_state.model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
+                    plot_model(viz_model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
                     st.image(MODEL_PLOT_PATH, caption=f"{model_type} Model Architecture")
                 except ImportError:
                     # Fallback to text-based summary
