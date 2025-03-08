@@ -22,10 +22,10 @@ import warnings
 import optuna
 from scipy import stats
 
-# Set page config first
+# Set page config first - this must be the first Streamlit command
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
-# Check for ads.txt request first - MUST be before any other Streamlit commands
+# Check for ads.txt request first
 query_params = st.experimental_get_query_params()
 request_path = query_params.get('_stcore_path_', [''])[0]
 
@@ -626,9 +626,6 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
         raise optuna.exceptions.TrialPruned(f"Trial failed: {str(e)}")
 
 # -------------------- Styling and Streamlit UI --------------------
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
-
-# Theme toggle
 with st.sidebar:
     st.title("🌊 Wateran")
     theme = st.selectbox("Theme", ["Light", "Dark"])
