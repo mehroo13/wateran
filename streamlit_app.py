@@ -1846,17 +1846,17 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     # Create plot of input data
                     fig = go.Figure()
                     
-                    # Plot actual discharge data
+                    # Plot only the discharge data from input
                     if output_var in new_df.columns:
                         fig.add_trace(go.Scatter(
                             x=dates,
                             y=new_df[output_var],
-                            name="Discharge",
-                            line=dict(color="#1f77b4")
+                            name=output_var,
+                            line=dict(color="blue")
                         ))
                         
                         fig.update_layout(
-                            title=f"Discharge Data: {output_var} ({new_data_file.name})",
+                            title=f"{output_var} ({new_data_file.name})",
                             xaxis_title="Date",
                             yaxis_title=f"{output_var} (m³/s)",
                             showlegend=True
@@ -1864,22 +1864,27 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        # Download options
+                        # Download button for the plot
                         buf = BytesIO()
-                        try:
-                            fig.write_image(buf, format="png")
-                        except ValueError:
-                            fig_alt, ax = plt.subplots()
-                            ax.plot(dates, new_df[output_var], label="Discharge")
-                            ax.legend()
-                            ax.set_title(f"Discharge Data: {output_var}")
-                            fig_alt.savefig(buf, format="png", bbox_inches="tight")
-                        
+                        fig.write_image(buf, format="png")
                         st.download_button(
-                            f"⬇️ Download Plot ({new_data_file.name})",
+                            "⬇️ Download Plot",
                             buf.getvalue(),
-                            f"discharge_data_{new_data_file.name}.png",
+                            f"{output_var}_data_{new_data_file.name}.png",
                             "image/png"
+                        )
+                        
+                        # Download button for the data
+                        input_data_df = pd.DataFrame({
+                            "Date": dates,
+                            output_var: new_df[output_var]
+                        })
+                        csv_data = input_data_df.to_csv(index=False)
+                        st.download_button(
+                            "⬇️ Download Data",
+                            csv_data,
+                            f"{output_var}_data_{new_data_file.name}.csv",
+                            "text/csv"
                         )
                     else:
                         st.warning(f"No {output_var} data found in the input file.")
