@@ -1542,48 +1542,59 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
             st.download_button("⬇️ Download Test Data CSV", test_csv, "test_predictions.csv", "text/csv", key="test_dl")
         
         if st.button("🗺️ Show Model Architecture", key="arch_button"):
-            if st.session_state.model is None:
-                st.error("No model available. Please train or test a model first.")
-            else:
-                try:
-                    # Rebuild model with current settings to ensure architecture matches selected type
-                    layers = (st.session_state.gru_layers if model_type in ["GRU", "Hybrid"] else 
-                              st.session_state.lstm_layers if model_type == "LSTM" else 
-                              st.session_state.rnn_layers if model_type == "RNN" else 
-                              st.session_state.gru_layers)
-                    units = (st.session_state.gru_units if model_type in ["GRU", "Hybrid"] else 
-                             st.session_state.lstm_units if model_type == "LSTM" else 
-                             st.session_state.rnn_units if model_type == "RNN" else 
-                             st.session_state.gru_units)
-                    
-                    # Get input shape from current model
-                    input_shape = st.session_state.model.input_shape[1:]
-                    
-                    # Build fresh model for visualization
-                    viz_model = build_advanced_model(
-                        input_shape,
-                        model_type,
-                        layers,
-                        units,
-                        st.session_state.dense_layers,
-                        st.session_state.dense_units,
-                        st.session_state.learning_rate,
-                        st.session_state.use_attention,
-                        st.session_state.use_bidirectional,
-                        st.session_state.use_residual,
-                        st.session_state.dropout_rate
-                    )
-                    
-                    # Try using plot_model first
-                    plot_model(viz_model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
-                    st.image(MODEL_PLOT_PATH, caption=f"{model_type} Model Architecture")
-                except ImportError:
-                    # Fallback to text-based summary
-                    st.write("### Model Architecture Summary")
+            try:
+                # Create a sample input shape
+                input_shape = (1, len(st.session_state.feature_cols))
+                
+                # Get current model parameters based on model type
+                layers = (st.session_state.gru_layers if model_type == "GRU" else 
+                          st.session_state.lstm_layers if model_type == "LSTM" else 
+                          st.session_state.rnn_layers if model_type == "RNN" else 
+                          st.session_state.gru_layers)
+                
+                units = (st.session_state.gru_units if model_type == "GRU" else 
+                         st.session_state.lstm_units if model_type == "LSTM" else 
+                         st.session_state.rnn_units if model_type == "RNN" else 
+                         st.session_state.gru_units)
+                
+                # Build a fresh model for visualization
+                viz_model = build_advanced_model(
+                    input_shape=input_shape,
+                    model_type=model_type,
+                    layers=layers,
+                    units=units,
+                    dense_layers=st.session_state.dense_layers,
+                    dense_units=st.session_state.dense_units,
+                    learning_rate=st.session_state.learning_rate,
+                    use_attention=st.session_state.use_attention,
+                    use_bidirectional=st.session_state.use_bidirectional,
+                    use_residual=st.session_state.use_residual,
+                    dropout_rate=st.session_state.dropout_rate
+                )
+                
+                # Try using plot_model
+                plot_model(viz_model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
+                st.image(MODEL_PLOT_PATH, caption=f"{model_type} Model Architecture")
+                
+                # Clean up
+                tf.keras.backend.clear_session()
+                
+            except ImportError:
+                st.error("Graphviz is not installed. Please install it using:")
+                st.code("""
+pip install pydot
+# Then install Graphviz using one of:
+apt-get install graphviz  # Linux
+brew install graphviz    # macOS
+winget install graphviz  # Windows
+                """)
+                
+                # Show text summary as fallback
+                if st.session_state.model is not None:
+                    st.write("### Model Architecture Summary (Text Version)")
                     stringlist = []
                     st.session_state.model.summary(print_fn=lambda x: stringlist.append(x))
                     st.text("\n".join(stringlist))
-                    st.info("💡 Tip: To see a graphical visualization, install pydot and graphviz:\n```\npip install pydot\napt-get install graphviz  # Linux\nbrew install graphviz    # macOS\nwinget install graphviz  # Windows\n```")
 
 # New Data Prediction Section
 if os.path.exists(MODEL_WEIGHTS_PATH):
@@ -1745,18 +1756,20 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         st.session_state.num_samples
                     )
                     
-                    # Reshape predictions to match dimensions
-                    y_new_pred_mean = y_new_pred_mean.reshape(-1, 1)  # Reshape to 2D array
-                    X_new_2d = X_new[:, 0, :].reshape(y_new_pred_mean.shape[0], -1)  # Ensure matching dimensions
+                    # Reshape predictions and features to match dimensions
+                    y_new_pred_mean = y_new_pred_mean.reshape(-1, 1)  # Make it 2D
+                    X_new_2d = X_new[:, 0, :].reshape(X_new.shape[0], -1)  # Convert 3D to 2D
                     
                     # Ensure arrays have matching first dimensions
                     min_len = min(len(y_new_pred_mean), len(X_new_2d))
                     y_new_pred_mean = y_new_pred_mean[:min_len]
                     X_new_2d = X_new_2d[:min_len]
+                    y_new_pred_std = y_new_pred_std[:min_len]
                     
-                    # Inverse transform predictions
-                    y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred_mean, X_new_2d]))[:, 0]
-                    y_new_pred = np.clip(y_new_pred, 0, None)
+                    # Stack arrays horizontally and inverse transform
+                    stacked_arrays = np.hstack([y_new_pred_mean, X_new_2d])
+                    y_new_pred = scaler.inverse_transform(stacked_arrays)[:, 0]
+                    y_new_pred = np.clip(y_new_pred, 0, None)  # Ensure non-negative predictions
                     
                     # Create results DataFrame
                     dates = new_df[date_col] if date_col != "None" else pd.RangeIndex(len(new_df))
