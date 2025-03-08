@@ -1846,45 +1846,42 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     # Create plot of input data
                     fig = go.Figure()
                     
-                    # Plot only the discharge data from input
-                    if output_var in new_df.columns:
-                        fig.add_trace(go.Scatter(
-                            x=dates,
-                            y=new_df[output_var],
-                            name=output_var,
-                            line=dict(color="blue")
-                        ))
-                        
-                        fig.update_layout(
-                            title=f"{output_var} ({new_data_file.name})",
-                            xaxis_title="Date",
-                            yaxis_title=f"{output_var} (m³/s)",
-                            showlegend=True
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Download button for the plot
-                        buf = BytesIO()
-                        fig.write_image(buf, format="png")
-                        st.download_button(
-                            "⬇️ Download Plot",
-                            buf.getvalue(),
-                            f"{output_var}_data_{new_data_file.name}.png",
-                            "image/png"
-                        )
-                        
-                        # Download button for the data
-                        input_data_df = pd.DataFrame({
-                            "Date": dates,
-                            output_var: new_df[output_var]
-                        })
-                        csv_data = input_data_df.to_csv(index=False)
-                        st.download_button(
-                            "⬇️ Download Data",
-                            csv_data,
-                            f"{output_var}_data_{new_data_file.name}.csv",
-                            "text/csv"
-                        )
-                    else:
-                        st.warning(f"No {output_var} data found in the input file.")
+                    # Plot only the predicted discharge from new input
+                    fig.add_trace(go.Scatter(
+                        x=dates.values[-len(y_new_pred):],
+                        y=y_new_pred,
+                        name=f"Predicted {output_var}",
+                        line=dict(color="blue")
+                    ))
+                    
+                    fig.update_layout(
+                        title=f"Predicted {output_var} ({new_data_file.name})",
+                        xaxis_title="Date",
+                        yaxis_title=f"{output_var} (m³/s)",
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Download button for the plot
+                    buf = BytesIO()
+                    fig.write_image(buf, format="png")
+                    st.download_button(
+                        "⬇️ Download Plot",
+                        buf.getvalue(),
+                        f"predicted_{output_var}_{new_data_file.name}.png",
+                        "image/png"
+                    )
+                    
+                    # Download button for the predicted data
+                    predicted_data_df = pd.DataFrame({
+                        "Date": dates.values[-len(y_new_pred):],
+                        f"Predicted_{output_var}": y_new_pred
+                    })
+                    csv_data = predicted_data_df.to_csv(index=False)
+                    st.download_button(
+                        "⬇️ Download Predicted Data",
+                        csv_data,
+                        f"predicted_{output_var}_{new_data_file.name}.csv",
+                        "text/csv"
+                    )
