@@ -1229,23 +1229,35 @@ with col2:
                                 ), n_trials=1)
                                 progress_bar.progress((i + 1) / 8)
                             
-                            st.write("Best hyperparameters:", study.best_params)
-                            st.write("Best validation loss:", study.best_value)
-                            
-                            # Update model with best hyperparameters
+                            # Store best parameters in session state without modifying widget values
                             best_params = study.best_params
-                            st.session_state.learning_rate = best_params['learning_rate']
-                            st.session_state.dropout_rate = best_params['dropout_rate']
+                            if 'opt_params' not in st.session_state:
+                                st.session_state.opt_params = {}
                             
-                            if st.session_state.model_type in ["GRU", "Hybrid"]:
-                                st.session_state.gru_layers = best_params['num_layers']
-                                st.session_state.gru_units = [best_params['units']] * best_params['num_layers']
-                            elif st.session_state.model_type == "LSTM":
-                                st.session_state.lstm_layers = best_params['num_layers']
-                                st.session_state.lstm_units = [best_params['units']] * best_params['num_layers']
-                            elif st.session_state.model_type == "RNN":
-                                st.session_state.rnn_layers = best_params['num_layers']
-                                st.session_state.rnn_units = [best_params['units']] * best_params['num_layers']
+                            st.session_state.opt_params.update({
+                                'learning_rate': best_params['learning_rate'],
+                                'dropout_rate': best_params['dropout_rate'],
+                                'num_layers': best_params['num_layers'],
+                                'units': best_params['units']
+                            })
+                            
+                            # Display results
+                            st.success("Optimization completed successfully!")
+                            st.write("Best hyperparameters found:")
+                            st.json({
+                                'learning_rate': f"{best_params['learning_rate']:.6f}",
+                                'num_layers': best_params['num_layers'],
+                                'units': best_params['units'],
+                                'dropout_rate': f"{best_params['dropout_rate']:.3f}"
+                            })
+                            st.write("Best validation loss:", f"{study.best_value:.6f}")
+                            
+                            # Provide instructions to user
+                            st.info("""
+                            To apply these optimized parameters:
+                            1. Click 'Train Model' again with the suggested values
+                            2. The model will be rebuilt with the optimized architecture
+                            """)
                             
                             # Final cleanup
                             tf.keras.backend.clear_session()
