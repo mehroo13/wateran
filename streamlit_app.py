@@ -393,8 +393,9 @@ def engineer_features(df, feature_cols, output_var, date_col=None):
                 engineered_df['day'] = engineered_df[date_col].dt.day
                 engineered_df['month'] = engineered_df[date_col].dt.month
                 engineered_df['day_of_week'] = engineered_df[date_col].dt.dayofweek
-                engineered_df['is_weekend'] = (engineered_df['day_of_week'].isin([5, 6])).astype(int)
-            except Exception:
+                engineered_df['is_weekend'] = engineered_df['day_of_week'].isin([5, 6]).astype(int)
+            except Exception as e:
+                print(f"Time feature engineering error: {str(e)}")
                 pass
         
         # Rolling statistics
@@ -405,30 +406,32 @@ def engineer_features(df, feature_cols, output_var, date_col=None):
                     if base_var in engineered_df.columns:
                         engineered_df[f'{base_var}_rolling_mean_3'] = engineered_df[base_var].rolling(window=3, min_periods=1).mean()
                         engineered_df[f'{base_var}_rolling_std_3'] = engineered_df[base_var].rolling(window=3, min_periods=1).std()
-                except Exception:
+                except Exception as e:
+                    print(f"Rolling stats error for {var}: {str(e)}")
                     pass
         
         # Interaction features - limit to avoid explosion of features
         valid_features = [f for f in feature_cols if f in engineered_df.columns]
         if len(valid_features) > 10:
-            # If too many features, only use the first 10 to avoid combinatorial explosion
             valid_features = valid_features[:10]
             
         for i, var1 in enumerate(valid_features):
-            for var2 in valid_features[i+1:min(i+5, len(valid_features))]:  # Limit interactions
+            for var2 in valid_features[i+1:min(i+5, len(valid_features))]:
                 try:
                     if '_Lag_' not in var1 and '_Lag_' not in var2:
                         if var1 in engineered_df.columns and var2 in engineered_df.columns:
                             engineered_df[f'{var1}_{var2}_interaction'] = engineered_df[var1] * engineered_df[var2]
-                except Exception:
+                except Exception as e:
+                    print(f"Interaction error for {var1}, {var2}: {str(e)}")
                     pass
         
         # Fill NaN values from feature engineering
         engineered_df = engineered_df.fillna(method='bfill').fillna(method='ffill').fillna(0)
         
         return engineered_df
-    except Exception:
-        return df  # Return original dataframe if engineering fails
+    except Exception as e:
+        print(f"Feature engineering error: {str(e)}")
+        return df
 
 # -------------------- Advanced Visualization --------------------
 def plot_advanced_metrics(metrics_history):
@@ -593,6 +596,7 @@ def evaluate_model_advanced(model, X_test, y_test, scaler, feature_cols):
 def objective(trial, X_train, y_train, X_val, y_val, model_type):
     """Objective function for Optuna hyperparameter optimization."""
     import tensorflow as tf
+    import numpy as np
     
     # Clear any existing TensorFlow session state
     tf.keras.backend.clear_session()
@@ -607,6 +611,22 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
     }
     
     try:
+        # Ensure input shapes are correct
+        X_train = np.array(X_train)
+        y_train = np.array(y_train)
+        X_val = np.array(X_val)
+        y_val = np.array(y_val)
+        
+        # Reshape inputs if needed
+        if len(X_train.shape) == 2:
+            X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
+        if len(y_train.shape) == 1:
+            y_train = y_train.reshape(-1, 1)
+        if len(X_val.shape) == 2:
+            X_val = X_val.reshape((X_val.shape[0], 1, X_val.shape[1]))
+        if len(y_val.shape) == 1:
+            y_val = y_val.reshape(-1, 1)
+        
         # Build model with error handling
         model = build_advanced_model(
             input_shape=(X_train.shape[1], X_train.shape[2]),
@@ -625,12 +645,6 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
             patience=5,
             restore_best_weights=True
         )
-        
-        # Ensure validation data has correct shape
-        if len(X_val.shape) == 2:
-            X_val = X_val.reshape((X_val.shape[0], 1, X_val.shape[1]))
-        if len(y_val.shape) == 1:
-            y_val = y_val.reshape(-1, 1)
         
         history = model.fit(
             X_train, y_train,
@@ -653,6 +667,7 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
     except Exception as e:
         # Clean up on error
         tf.keras.backend.clear_session()
+        print(f"Trial error: {str(e)}")
         raise optuna.exceptions.TrialPruned(f"Trial failed: {str(e)}")
 
 # -------------------- Styling and Streamlit UI --------------------
