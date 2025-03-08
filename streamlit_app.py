@@ -1,3 +1,20 @@
+Thank you for providing the error details again. The issue remains consistent: a StreamlitAPIException is being raised because st.set_page_config() is not the first Streamlit command executed in your script. The traceback points to line 631 in streamlit_app.py, indicating that this line is still not positioned correctly despite my previous suggestions. Since you’ve shared the full code previously and the error persists, let’s systematically resolve this by ensuring st.set_page_config() is unequivocally the first Streamlit command and by addressing potential hidden issues.
+Root Cause Recap
+
+Streamlit requires st.set_page_config() to be the first command that interacts with its runtime. If any other st. command (e.g., st.markdown(), st.title(), etc.) or certain runtime-affecting operations precede it, the internal ScriptRunContext cannot enqueue the page configuration message, resulting in the exception you’re seeing.
+
+In your original code, st.set_page_config() appeared after imports, function definitions, and some initial st.markdown() calls for AdMob integration. Even though I suggested moving it to the top, the error at line 631 suggests either:
+
+    The change wasn’t applied correctly, and st.set_page_config() remains at line 631.
+    Some code before line 631 is implicitly triggering Streamlit’s runtime (e.g., a misplaced st. command or a side effect from imports).
+
+Step-by-Step Resolution
+
+Let’s fix this definitively:
+1. Restructure the Code
+
+Ensure st.set_page_config() is the very first Streamlit command after imports and basic Python setup. Here’s the corrected top portion of your script:
+python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -22,19 +39,19 @@ import warnings
 import optuna
 from scipy import stats
 
-# Set page config first
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
-
 # Suppress all warnings
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+# Set page config as the FIRST Streamlit command
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
 # AdMob Configuration
 ADMOB_APP_ID = "ca-app-pub-2264561932019289~4419184202"
 ADMOB_TOP_AD_UNIT_ID = "ca-app-pub-2264561932019289/9782119699"
 ADMOB_BOTTOM_AD_UNIT_ID = "ca-app-pub-2264561932019289/3656766879"
 
-# Add AdMob script to page header
+# Add AdMob script to page header AFTER page config
 st.markdown("""
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289"
      crossorigin="anonymous"></script>
