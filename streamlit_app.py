@@ -605,10 +605,7 @@ st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
 # Add Google AdSense code
 st.markdown("""
-    <head>
-        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289"
-        crossorigin="anonymous"></script>
-    </head>
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289" crossorigin="anonymous"></script>
 """, unsafe_allow_html=True)
 
 # Theme toggle
