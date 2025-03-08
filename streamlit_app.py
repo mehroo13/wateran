@@ -603,9 +603,11 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
 # -------------------- Styling and Streamlit UI --------------------
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
-# Add Google AdSense code
+# Add Google AdSense verification meta tag
 st.markdown("""
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289" crossorigin="anonymous"></script>
+    <head>
+        <meta name="google-adsense-account" content="ca-pub-2264561932019289">
+    </head>
 """, unsafe_allow_html=True)
 
 # Theme toggle
