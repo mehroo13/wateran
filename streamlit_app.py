@@ -22,33 +22,22 @@ import warnings
 import optuna
 from scipy import stats
 
-# Set page config first - this must be the first Streamlit command
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
-
 # Enhanced ads.txt handling
 def serve_ads_txt():
     """Serve the ads.txt content when requested."""
-    # AdSense publisher ID
-    ADSENSE_PUBLISHER_ID = "google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0"
-    
-    # Check for ads.txt request in multiple ways
     query_params = st.experimental_get_query_params()
-    request_path = query_params.get('_stcore_path_', [''])[0]
+    request_path = query_params.get('_stcore_path_', [''])[0].lower()
     
-    is_ads_txt_request = (
-        'ads.txt' in query_params or 
-        request_path == 'ads.txt' or 
-        request_path == '/ads.txt' or 
-        request_path.endswith('/ads.txt') or 
-        request_path.endswith('ads.txt')
-    )
-    
-    if is_ads_txt_request:
-        st.text(ADSENSE_PUBLISHER_ID)
+    # Check if this is an ads.txt request
+    if 'ads.txt' in request_path:
+        st.text('google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0')
         st.stop()
 
-# Serve ads.txt if requested
+# Call ads.txt handler before any other Streamlit commands
 serve_ads_txt()
+
+# Set page config first
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
 # Add AdSense verification meta tag and script
 st.markdown("""
