@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras.layers import Input, Dense, GRU, LSTM, SimpleRNN, Dropout, Bidirectional, Layer, concatenate
+from tensorflow.keras.models import Model
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, TensorBoard
 import os
 import tempfile
 import matplotlib.pyplot as plt
@@ -16,6 +19,8 @@ from plotly.subplots import make_subplots
 import json
 from datetime import datetime, timedelta
 import warnings
+import optuna
+from scipy import stats
 
 # Suppress all warnings
 warnings.filterwarnings('ignore')
@@ -1714,8 +1719,17 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         st.session_state.num_samples
                     )
                     
+                    # Reshape predictions to match dimensions
+                    y_new_pred_mean = y_new_pred_mean.reshape(-1, 1)  # Reshape to 2D array
+                    X_new_2d = X_new[:, 0, :]  # Convert 3D to 2D
+                    
+                    # Ensure arrays have matching first dimensions
+                    min_len = min(len(y_new_pred_mean), len(X_new_2d))
+                    y_new_pred_mean = y_new_pred_mean[:min_len]
+                    X_new_2d = X_new_2d[:min_len]
+                    
                     # Inverse transform predictions
-                    y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred_mean, X_new[:, 0, :]]))[:, 0]
+                    y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred_mean, X_new_2d]))[:, 0]
                     y_new_pred = np.clip(y_new_pred, 0, None)
                     
                     # Generate future predictions
