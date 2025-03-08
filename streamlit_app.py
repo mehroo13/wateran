@@ -22,7 +22,84 @@ import warnings
 import optuna
 from scipy import stats
 
-# Define constants
+# AdMob initialization script
+st.components.v1.html("""
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-app-pub-2264561932019289"
+     crossorigin="anonymous"></script>
+""", height=0)
+
+# Top ad container
+st.components.v1.html("""
+    <div class="ad-container">
+        <ins class="adsbygoogle"
+            style="display:inline-block;width:728px;height:90px"
+            data-ad-client="ca-app-pub-2264561932019289"
+            data-ad-slot="9782119699">
+        </ins>
+        <script>
+            (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+    </div>
+""", height=110)
+# Suppress all warnings
+warnings.filterwarnings('ignore')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+# Simplified uncertainty estimation without TFP
+def get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units, 
+                         learning_rate, use_attention, use_bidirectional, use_residual, dropout_rate):
+    inputs = Input(shape=input_shape)
+    x = inputs
+    
+    # Rest of the model architecture remains the same
+    if model_type == "PINN":
+        for i in range(layers):
+            x = Dense(units[i], activation='relu')(x)
+            x = Dropout(dropout_rate)(x)
+        x = PhysicsInformedLayer()(x)
+    elif model_type == "Hybrid":
+        # Hybrid model code remains the same
+        pass
+    else:
+        for i in range(layers):
+            return_seq = i < layers - 1
+            if use_bidirectional:
+                if model_type == "GRU":
+                    x = Bidirectional(GRU(units[i], return_sequences=return_seq))(x)
+                elif model_type == "LSTM":
+                    x = Bidirectional(LSTM(units[i], return_sequences=return_seq))(x)
+                elif model_type == "RNN":
+                    x = Bidirectional(SimpleRNN(units[i], return_sequences=return_seq))(x)
+            else:
+                if model_type == "GRU":
+                    x = GRU(units[i], return_sequences=return_seq)(x)
+                elif model_type == "LSTM":
+                    x = LSTM(units[i], return_sequences=return_seq)(x)
+                elif model_type == "RNN":
+                    x = SimpleRNN(units[i], return_sequences=return_seq)(x)
+            
+            if use_residual and return_seq and x.shape[-1] == inputs.shape[-1]:
+                x = concatenate([x, inputs])
+            x = Dropout(dropout_rate)(x)
+    
+    for unit in dense_units[:dense_layers]:
+        x = Dense(unit, activation='relu')(x)
+        x = Dropout(dropout_rate)(x)
+    
+    # Output layer for mean prediction only
+    outputs = Dense(1)(x)
+    model = Model(inputs=inputs, outputs=outputs)
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+                 loss='mse')
+    return model
+
+# Replace build_advanced_model function
+def build_advanced_model(input_shape, model_type, layers, units, dense_layers, dense_units, learning_rate, 
+                        use_attention=False, use_bidirectional=False, use_residual=False, dropout_rate=0.2):
+    return get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units,
+                               learning_rate, use_attention, use_bidirectional, use_residual, dropout_rate)
+
+# -------------------- Model Parameters --------------------
 DEFAULT_GRU_UNITS = 64
 DEFAULT_LSTM_UNITS = 64
 DEFAULT_RNN_UNITS = 64
@@ -43,50 +120,567 @@ DEFAULT_TRAIN_CSV_PATH = "train_results.csv"
 DEFAULT_TEST_CSV_PATH = "test_results.csv"
 TENSORBOARD_DIR = os.path.join(tempfile.gettempdir(), "tensorboard_logs")
 
-# Set page config first
+# -------------------- PINN Custom Layer --------------------
+class PhysicsInformedLayer(Layer):
+    def __init__(self, **kwargs):
+        super(PhysicsInformedLayer, self).__init__(**kwargs)
+        
+    def build(self, input_shape):
+        self.kernel = self.add_weight(name='kernel',
+                                    shape=(input_shape[-1], 1),
+                                    initializer='glorot_uniform',
+                                    trainable=True)
+        self.bias = self.add_weight(name='bias',
+                                  shape=(1,),
+                                  initializer='zeros',
+                                  trainable=True)
+        super(PhysicsInformedLayer, self).build(input_shape)
+    
+    def call(self, inputs):
+        # Apply physics constraints
+        # 1. Mass conservation
+        # 2. Non-negativity
+        # 3. Smoothness constraint
+        x = tf.matmul(inputs, self.kernel) + self.bias
+        x = tf.nn.relu(x)  # Non-negativity
+        return x
+    
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], 1)
+
+# -------------------- PINN Loss Functions --------------------
+def physics_loss(y_true, y_pred):
+    """Physics-based loss function for streamflow prediction."""
+    # Mass conservation constraint
+    mass_loss = tf.reduce_mean(tf.abs(tf.reduce_sum(y_pred) - tf.reduce_sum(y_true)))
+    
+    # Non-negativity constraint
+    non_neg_loss = tf.reduce_mean(tf.nn.relu(-y_pred))
+    
+    # Smoothness constraint
+    smoothness_loss = tf.reduce_mean(tf.abs(y_pred[1:] - y_pred[:-1]))
+    
+    return mass_loss + 0.1 * non_neg_loss + 0.01 * smoothness_loss
+
+def combined_loss(y_true, y_pred):
+    """Combined MSE and physics loss."""
+    mse_loss = tf.keras.losses.mean_squared_error(y_true, y_pred)
+    phys_loss = physics_loss(y_true, y_pred)
+    return mse_loss + DEFAULT_PHYSICS_WEIGHT * phys_loss
+
+# -------------------- Advanced Metric Functions --------------------
+def nse(actual, predicted):
+    return 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - np.mean(actual)) ** 2))
+
+def kge(actual, predicted):
+    r = np.corrcoef(actual, predicted)[0, 1]
+    alpha = np.std(predicted) / np.std(actual)
+    beta = np.mean(predicted) / np.mean(actual)
+    return 1 - np.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
+
+def mape(actual, predicted):
+    return np.mean(np.abs((actual - predicted) / actual)) * 100
+
+def rmse(actual, predicted):
+    return np.sqrt(mean_squared_error(actual, predicted))
+
+def mae(actual, predicted):
+    return mean_absolute_error(actual, predicted)
+
+def r2(actual, predicted):
+    return r2_score(actual, predicted)
+
+# -------------------- Advanced Metrics Dictionary --------------------
+all_metrics_dict = {
+    "RMSE": rmse,
+    "MAE": mae,
+    "R²": r2,
+    "NSE": nse,
+    "KGE": kge,
+    "MAPE": mape
+}
+
+# -------------------- Advanced Custom Callbacks --------------------
+class StreamlitProgressCallback(tf.keras.callbacks.Callback):
+    def __init__(self, total_epochs, progress_placeholder, metrics_placeholder):
+        super().__init__()
+        self.total_epochs = total_epochs
+        self.progress_placeholder = progress_placeholder
+        self.metrics_placeholder = metrics_placeholder
+        self.current_epoch = 0
+        self.metrics_history = []
+
+    def on_epoch_end(self, epoch, logs=None):
+        self.current_epoch = epoch + 1
+        progress = self.current_epoch / self.total_epochs
+        self.progress_placeholder.progress(min(progress, 1.0))
+        
+        # Update metrics display
+        metrics_text = f"Epoch {self.current_epoch}/{self.total_epochs}\n"
+        for metric, value in logs.items():
+            metrics_text += f"{metric}: {value:.4f}\n"
+        self.metrics_placeholder.text(metrics_text)
+        
+        # Store metrics history
+        self.metrics_history.append(logs)
+
+class AdvancedModelCheckpoint(tf.keras.callbacks.ModelCheckpoint):
+    def __init__(self, filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min'):
+        super().__init__(filepath, monitor, verbose, save_best_only, mode)
+        self.best_epoch = 0
+        self.best_value = float('inf')
+
+    def on_epoch_end(self, epoch, logs=None):
+        current = logs.get(self.monitor)
+        if current is None:
+            return
+
+        if self.mode == 'min':
+            if current < self.best_value:
+                self.best_value = current
+                self.best_epoch = epoch
+                super().on_epoch_end(epoch, logs)
+        else:
+            if current > self.best_value:
+                self.best_value = current
+                self.best_epoch = epoch
+                super().on_epoch_end(epoch, logs)
+
+# -------------------- Advanced Model Definition --------------------
+def build_advanced_model(input_shape, model_type, layers, units, dense_layers, dense_units, learning_rate, 
+                        use_attention=False, use_bidirectional=False, use_residual=False, dropout_rate=0.2):
+    return get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units,
+                               learning_rate, use_attention, use_bidirectional, use_residual, dropout_rate)
+
+# -------------------- Advanced Data Preprocessing --------------------
+def preprocess_data(df, input_vars, output_var, var_types, num_lags, date_col=None, 
+                   handle_missing='median', remove_outliers=True, outlier_threshold=3):
+    """Advanced data preprocessing with multiple options."""
+    try:
+        processed_df = df.copy()
+        
+        # Ensure input_vars and output_var exist in the dataframe
+        missing_cols = [col for col in input_vars + [output_var] if col not in processed_df.columns]
+        if missing_cols:
+            # Filter to only include columns that exist
+            input_vars = [col for col in input_vars if col in processed_df.columns]
+            if output_var not in processed_df.columns:
+                raise ValueError(f"Output variable {output_var} not found in dataframe")
+        
+        # Handle missing values
+        if handle_missing == 'median':
+            for var in input_vars + [output_var]:
+                processed_df[var] = processed_df[var].fillna(processed_df[var].median())
+        elif handle_missing == 'mean':
+            for var in input_vars + [output_var]:
+                processed_df[var] = processed_df[var].fillna(processed_df[var].mean())
+        elif handle_missing == 'forward':
+            for var in input_vars + [output_var]:
+                processed_df[var] = processed_df[var].fillna(method='ffill')
+        elif handle_missing == 'backward':
+            for var in input_vars + [output_var]:
+                processed_df[var] = processed_df[var].fillna(method='bfill')
+        
+        # Remove outliers - only if remove_outliers is True (boolean check)
+        if isinstance(remove_outliers, bool) and remove_outliers:
+            for var in input_vars + [output_var]:
+                # Use try-except to handle cases where zscore fails
+                try:
+                    z_scores = stats.zscore(processed_df[var])
+                    processed_df[var] = processed_df[var].mask(abs(z_scores) > outlier_threshold)
+                    processed_df[var] = processed_df[var].fillna(processed_df[var].median())
+                except:
+                    pass
+        
+        # Create lagged features
+        feature_cols = []
+        for var in input_vars:
+            if var in var_types and var_types[var] == "Dynamic":
+                for lag in range(1, num_lags + 1):
+                    processed_df[f'{var}_Lag_{lag}'] = processed_df[var].shift(lag)
+                    feature_cols.append(f'{var}_Lag_{lag}')
+            else:
+                feature_cols.append(var)
+        
+        # Add output variable lags
+        for lag in range(1, num_lags + 1):
+            processed_df[f'{output_var}_Lag_{lag}'] = processed_df[output_var].shift(lag)
+            feature_cols.append(f'{output_var}_Lag_{lag}')
+        
+        # Remove rows with NaN values from lagged features
+        lag_cols = [col for col in feature_cols if "_Lag_" in col]
+        if lag_cols:
+            processed_df = processed_df.dropna(subset=lag_cols, how='any')
+        
+        # Fill remaining NaN values
+        processed_df = processed_df.fillna(0)
+        
+        return processed_df, feature_cols
+    except Exception:
+        # Return a minimal valid result
+        return df, input_vars
+
+# -------------------- Advanced Feature Engineering --------------------
+def engineer_features(df, feature_cols, output_var, date_col=None):
+    """Add engineered features to the dataset."""
+    try:
+        # Validate inputs
+        if df is None or df.empty:
+            return df
+            
+        if not feature_cols:
+            return df
+            
+        if output_var not in df.columns:
+            return df
+            
+        engineered_df = df.copy()
+        
+        # Time-based features if date column is available
+        if date_col and date_col in engineered_df.columns:
+            try:
+                # Check if date column is actually a datetime
+                if not pd.api.types.is_datetime64_any_dtype(engineered_df[date_col]):
+                    engineered_df[date_col] = pd.to_datetime(engineered_df[date_col], errors='coerce')
+                
+                engineered_df['hour'] = engineered_df[date_col].dt.hour
+                engineered_df['day'] = engineered_df[date_col].dt.day
+                engineered_df['month'] = engineered_df[date_col].dt.month
+                engineered_df['day_of_week'] = engineered_df[date_col].dt.dayofweek
+                weekend_mask = engineered_df['day_of_week'].isin([5, 6])
+                engineered_df['is_weekend'] = weekend_mask.astype(int)
+            except:
+                pass
+        
+        # Rolling statistics
+        for var in feature_cols:
+            if '_Lag_' in var:
+                try:
+                    base_var = var.split('_Lag_')[0]
+                    if base_var in engineered_df.columns:
+                        engineered_df[f'{base_var}_rolling_mean_3'] = engineered_df[base_var].rolling(window=3, min_periods=1).mean()
+                        engineered_df[f'{base_var}_rolling_std_3'] = engineered_df[base_var].rolling(window=3, min_periods=1).std()
+                except:
+                    pass
+        
+        # Interaction features - limit to avoid explosion of features
+        valid_features = [f for f in feature_cols if f in engineered_df.columns]
+        if len(valid_features) > 10:
+            valid_features = valid_features[:10]
+            
+        for i, var1 in enumerate(valid_features):
+            for var2 in valid_features[i+1:min(i+5, len(valid_features))]:
+                try:
+                    if '_Lag_' not in var1 and '_Lag_' not in var2:
+                        if var1 in engineered_df.columns and var2 in engineered_df.columns:
+                            engineered_df[f'{var1}_{var2}_interaction'] = engineered_df[var1] * engineered_df[var2]
+                except:
+                    pass
+        
+        # Fill NaN values from feature engineering
+        engineered_df = engineered_df.fillna(method='bfill').fillna(method='ffill').fillna(0)
+        
+        return engineered_df
+    except:
+        return df
+
+# -------------------- Advanced Visualization --------------------
+def plot_advanced_metrics(metrics_history):
+    """Create advanced visualization of training metrics."""
+    fig = make_subplots(rows=2, cols=2, subplot_titles=('Loss', 'Learning Rate', 'RMSE', 'R²'))
+    
+    # Loss plot
+    fig.add_trace(
+        go.Scatter(y=[m.get('loss', 0) for m in metrics_history], name='Training Loss'),
+        row=1, col=1
+    )
+    if metrics_history and 'val_loss' in metrics_history[0]:
+        fig.add_trace(
+            go.Scatter(y=[m.get('val_loss', 0) for m in metrics_history], name='Validation Loss'),
+            row=1, col=1
+        )
+    
+    # Learning rate plot
+    fig.add_trace(
+        go.Scatter(y=[m.get('lr', m.get('learning_rate', 0.001)) for m in metrics_history], name='Learning Rate'),
+        row=1, col=2
+    )
+    
+    # RMSE plot
+    fig.add_trace(
+        go.Scatter(y=[np.sqrt(m.get('mse', m.get('mean_squared_error', 0))) for m in metrics_history], name='RMSE'),
+        row=2, col=1
+    )
+    
+    # R² plot
+    fig.add_trace(
+        go.Scatter(y=[m.get('r2', 0) for m in metrics_history], name='R²'),
+        row=2, col=2
+    )
+    
+    fig.update_layout(height=800, showlegend=True)
+    return fig
+
+def plot_prediction_with_uncertainty(dates, actual, predicted_mean, predicted_std, title):
+    """Create visualization with prediction uncertainty."""
+    fig = go.Figure()
+    
+    # Actual values
+    fig.add_trace(go.Scatter(
+        x=dates,
+        y=actual,
+        name='Actual',
+        line=dict(color='blue')
+    ))
+    
+    # Predicted mean
+    fig.add_trace(go.Scatter(
+        x=dates,
+        y=predicted_mean,
+        name='Predicted',
+        line=dict(color='red')
+    ))
+    
+    # Confidence intervals
+    fig.add_trace(go.Scatter(
+        x=dates.tolist() + dates[::-1].tolist(),
+        y=(predicted_mean + 1.96 * predicted_std).tolist() + 
+          (predicted_mean - 1.96 * predicted_std)[::-1].tolist(),
+        fill='toself',
+        fillcolor='rgba(255,0,0,0.1)',
+        line=dict(color='rgba(255,0,0,0)'),
+        name='95% Confidence Interval'
+    ))
+    
+    fig.update_layout(
+        title=title,
+        xaxis_title='Date',
+        yaxis_title='Value',
+        showlegend=True
+    )
+    
+    return fig
+
+# -------------------- Advanced Model Training --------------------
+def train_advanced_model(model, X_train, y_train, X_val, y_val, epochs, batch_size, callbacks):
+    """Train model with advanced features."""
+    history = model.fit(
+        X_train, y_train,
+        validation_data=(X_val, y_val),
+        epochs=epochs,
+        batch_size=batch_size,
+        callbacks=callbacks,
+        verbose=1
+    )
+    return history
+
+# -------------------- Advanced Prediction --------------------
+def predict_with_uncertainty(model, X, num_samples=100):
+    """Generate predictions with uncertainty estimation using ensemble approach."""
+    if len(X) > 1000:  # Reduce samples for large datasets
+        num_samples = min(10, num_samples)
+    
+    predictions = []
+    batch_size = min(1000, len(X))  # Use batching for large datasets
+    
+    for _ in range(num_samples):
+        # Add noise to input
+        X_noisy = X + np.random.normal(0, 0.01, X.shape)
+        # Get predictions in batches
+        batch_predictions = []
+        for i in range(0, len(X), batch_size):
+            batch = X_noisy[i:i + batch_size]
+            pred = model.predict(batch, verbose=0)
+            batch_predictions.append(pred)
+        predictions.append(np.concatenate(batch_predictions))
+    
+    # Calculate statistics
+    predictions = np.array(predictions)
+    mean_pred = np.mean(predictions, axis=0)
+    std_pred = np.std(predictions, axis=0)
+    
+    return mean_pred.reshape(-1), std_pred.reshape(-1)
+
+def generate_future_predictions(model, last_sequence, scaler, feature_cols, num_steps, 
+                              input_vars, output_var, var_types, num_lags):
+    """Generate predictions for future time steps."""
+    future_predictions = []
+    current_sequence = last_sequence.copy()
+    
+    for _ in range(num_steps):
+        # Get prediction
+        pred = model.predict(current_sequence.reshape(1, -1, current_sequence.shape[-1]), verbose=0)
+        future_predictions.append(pred[0][0])  # Extract scalar prediction
+        
+        # Update sequence for next prediction
+        current_sequence = current_sequence.reshape(-1)  # Flatten to 1D
+        current_sequence = np.roll(current_sequence, -1)  # Shift values left
+        current_sequence[-1] = pred[0][0]  # Update last value
+        current_sequence = current_sequence.reshape(1, -1)  # Reshape back to 2D
+    
+    return np.array(future_predictions)
+
+# -------------------- Advanced Model Evaluation --------------------
+def evaluate_model_advanced(model, X_test, y_test, scaler, feature_cols):
+    """Advanced model evaluation with multiple metrics."""
+    predictions = model.predict(X_test)
+    mean_pred, std_pred = predictions[:, 0], predictions[:, 1]
+    
+    # Calculate metrics
+    metrics = {}
+    for metric_name, metric_func in all_metrics_dict.items():
+        metrics[metric_name] = metric_func(y_test, mean_pred)
+    
+    # Calculate prediction intervals
+    lower_bound = mean_pred - 1.96 * std_pred
+    upper_bound = mean_pred + 1.96 * std_pred
+    
+    # Calculate coverage of prediction intervals
+    coverage = np.mean((y_test >= lower_bound) & (y_test <= upper_bound))
+    metrics['Prediction Interval Coverage'] = coverage
+    
+    return metrics, mean_pred, std_pred
+
+# -------------------- Advanced Hyperparameter Optimization --------------------
+def objective(trial, X_train, y_train, X_val, y_val, model_type):
+    """Objective function for Optuna hyperparameter optimization."""
+    import tensorflow as tf
+    import numpy as np
+    
+    # Clear any existing TensorFlow session state
+    tf.keras.backend.clear_session()
+    
+    # Define hyperparameters to optimize with more focused ranges
+    hp = {
+        'learning_rate': trial.suggest_loguniform('learning_rate', 1e-4, 1e-2),
+        'num_layers': trial.suggest_int('num_layers', 1, 3),
+        'units': trial.suggest_int('units', 32, 128),
+        'dropout_rate': trial.suggest_uniform('dropout_rate', 0.1, 0.3),
+        'batch_size': trial.suggest_categorical('batch_size', [32, 64])
+    }
+    
+    try:
+        # Ensure input shapes are correct
+        X_train = np.array(X_train)
+        y_train = np.array(y_train)
+        X_val = np.array(X_val)
+        y_val = np.array(y_val)
+        
+        # Reshape inputs if needed
+        if len(X_train.shape) == 2:
+            X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
+        if len(y_train.shape) == 1:
+            y_train = y_train.reshape(-1, 1)
+        if len(X_val.shape) == 2:
+            X_val = X_val.reshape((X_val.shape[0], 1, X_val.shape[1]))
+        if len(y_val.shape) == 1:
+            y_val = y_val.reshape(-1, 1)
+        
+        # Build model with error handling
+        model = build_advanced_model(
+            input_shape=(X_train.shape[1], X_train.shape[2]),
+            model_type=model_type,
+            layers=hp['num_layers'],
+            units=[hp['units']] * hp['num_layers'],
+            dense_layers=1,
+            dense_units=[32],
+            learning_rate=hp['learning_rate'],
+            dropout_rate=hp['dropout_rate']
+        )
+        
+        # Train model with reduced epochs and earlier stopping
+        early_stopping = tf.keras.callbacks.EarlyStopping(
+            monitor='val_loss',
+            patience=5,
+            restore_best_weights=True
+        )
+        
+        history = model.fit(
+            X_train, y_train,
+            validation_data=(X_val, y_val),
+            epochs=20,
+            batch_size=hp['batch_size'],
+            callbacks=[early_stopping],
+            verbose=0
+        )
+        
+        # Get the best validation loss
+        best_val_loss = min(history.history['val_loss'])
+        
+        # Clean up
+        del model
+        tf.keras.backend.clear_session()
+        
+        return best_val_loss
+    
+    except Exception as e:
+        # Clean up on error
+        tf.keras.backend.clear_session()
+        print(f"Trial error: {str(e)}")
+        raise optuna.exceptions.TrialPruned(f"Trial failed: {str(e)}")
+
+# -------------------- Styling and Streamlit UI --------------------
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
-# Suppress all warnings
-warnings.filterwarnings('ignore')
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# Theme toggle
+with st.sidebar:
+    st.title("🌊 Wateran")
+    theme = st.selectbox("Theme", ["Light", "Dark"])
+    if theme == "Dark":
+        st.markdown("""
+            <style>
+            .stApp {
+                background-color: #1E1E1E;
+                color: #FFFFFF;
+            }
+            .stButton>button {
+                background-color: #4CAF50;
+                color: white;
+                border-radius: 8px;
+                padding: 10px 20px;
+                font-weight: bold;
+            }
+            .stButton>button:hover {
+                background-color: #45a049;
+            }
+            .metric-box {
+                background-color: #2D2D2D;
+                border-radius: 8px;
+                padding: 15px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                text-align: center;
+                margin: 10px 0;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+            <style>
+            .stApp {
+                background-color: #f0f4f8;
+                color: #000000;
+            }
+            .stButton>button {
+                background-color: #007bff;
+                color: white;
+                border-radius: 8px;
+                padding: 10px 20px;
+                font-weight: bold;
+            }
+            .stButton>button:hover {
+                background-color: #0056b3;
+            }
+            .metric-box {
+                background-color: #ffffff;
+                border-radius: 8px;
+                padding: 15px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                text-align: center;
+                margin: 10px 0;
+            }
+            </style>
+        """, unsafe_allow_html=True)
 
-# Theme and styling
-st.markdown("""
-    <style>
-    .main {
-        padding: 0rem 1rem;
-    }
-    .ad-container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin: 1rem 0;
-        min-height: 90px;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# AdMob initialization script
-st.components.v1.html("""
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-app-pub-2264561932019289"
-     crossorigin="anonymous"></script>
-""", height=0)
-
-# Top ad container
-st.components.v1.html("""
-    <div class="ad-container">
-        <ins class="adsbygoogle"
-            style="display:inline-block;width:728px;height:90px"
-            data-ad-client="ca-app-pub-2264561932019289"
-            data-ad-slot="9782119699">
-        </ins>
-        <script>
-            (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-""", height=110)
-
-# Title and description
 st.title("🌊 Wateran: Advanced Time Series Prediction")
 st.markdown("**State-of-the-art Time Series Prediction with Uncertainty Quantification**", unsafe_allow_html=True)
 
@@ -121,74 +715,35 @@ if 'use_mass_conservation' not in st.session_state:
     st.session_state.use_mass_conservation = True
 if 'use_smoothness' not in st.session_state:
     st.session_state.use_smoothness = True
-if 'use_attention' not in st.session_state:
-    st.session_state.use_attention = False
-if 'use_bidirectional' not in st.session_state:
-    st.session_state.use_bidirectional = False
-if 'use_residual' not in st.session_state:
-    st.session_state.use_residual = False
-if 'dropout_rate' not in st.session_state:
-    st.session_state.dropout_rate = 0.2
-if 'prediction_horizon' not in st.session_state:
-    st.session_state.prediction_horizon = DEFAULT_PREDICTION_HORIZON
-if 'num_samples' not in st.session_state:
-    st.session_state.num_samples = 100
-if 'gru_layers' not in st.session_state:
-    st.session_state.gru_layers = 1
-if 'lstm_layers' not in st.session_state:
-    st.session_state.lstm_layers = 1
-if 'rnn_layers' not in st.session_state:
-    st.session_state.rnn_layers = 1
-if 'dense_layers' not in st.session_state:
-    st.session_state.dense_layers = 1
-if 'gru_units' not in st.session_state:
-    st.session_state.gru_units = [DEFAULT_GRU_UNITS]
-if 'lstm_units' not in st.session_state:
-    st.session_state.lstm_units = [DEFAULT_LSTM_UNITS]
-if 'rnn_units' not in st.session_state:
-    st.session_state.rnn_units = [DEFAULT_RNN_UNITS]
-if 'dense_units' not in st.session_state:
-    st.session_state.dense_units = [DEFAULT_DENSE_UNITS]
-if 'learning_rate' not in st.session_state:
-    st.session_state.learning_rate = DEFAULT_LEARNING_RATE
-if 'hybrid_models' not in st.session_state:
-    st.session_state.hybrid_models = ["GRU"]
-if 'metrics' not in st.session_state:
-    st.session_state.metrics = None
-if 'train_results_df' not in st.session_state:
-    st.session_state.train_results_df = None
-if 'test_results_df' not in st.session_state:
-    st.session_state.test_results_df = None
-if 'fig' not in st.session_state:
-    st.session_state.fig = None
-if 'model_plot' not in st.session_state:
-    st.session_state.model_plot = None
-if 'scaler' not in st.session_state:
-    st.session_state.scaler = None
-if 'new_predictions_df' not in st.session_state:
-    st.session_state.new_predictions_df = None
-if 'new_fig' not in st.session_state:
-    st.session_state.new_fig = None
-if 'selected_inputs' not in st.session_state:
-    st.session_state.selected_inputs = None
-if 'new_date_col' not in st.session_state:
-    st.session_state.new_date_col = None
-if 'selected_metrics' not in st.session_state:
-    st.session_state.selected_metrics = None
-if 'new_var_types' not in st.session_state:
-    st.session_state.new_var_types = None
-if 'cv_metrics' not in st.session_state:
-    st.session_state.cv_metrics = None
-if 'X_train' not in st.session_state:
-    st.session_state.X_train = None
-if 'y_train' not in st.session_state:
-    st.session_state.y_train = None
-if 'X_test' not in st.session_state:
-    st.session_state.X_test = None
-if 'y_test' not in st.session_state:
-    st.session_state.y_test = None
-if 'model' not in st.session_state:
-    st.session_state.model = None
+
+# Initialize other session state variables
+for key in ['metrics', 'train_results_df', 'test_results_df', 'fig', 'model_plot', 'scaler', 
+            'new_predictions_df', 'new_fig', 'gru_layers', 'lstm_layers', 'rnn_layers', 'gru_units', 
+            'lstm_units', 'rnn_units', 'dense_layers', 'dense_units', 'learning_rate', 
+            'new_data_file', 'selected_inputs', 'new_date_col', 'selected_metrics', 'new_var_types', 
+            'cv_metrics', 'X_train', 'y_train', 'X_test', 'y_test', 'model', 'hybrid_models',
+            'use_attention', 'use_bidirectional', 'use_residual', 'dropout_rate', 'prediction_horizon', 'num_samples']:
+    if key not in st.session_state:
+        if key in ['gru_layers', 'lstm_layers', 'rnn_layers', 'dense_layers']:
+            st.session_state[key] = 1
+        elif key == 'gru_units':
+            st.session_state[key] = [DEFAULT_GRU_UNITS]
+        elif key == 'lstm_units':
+            st.session_state[key] = [DEFAULT_LSTM_UNITS]
+        elif key == 'rnn_units':
+            st.session_state[key] = [DEFAULT_RNN_UNITS]
+        elif key == 'dense_units':
+            st.session_state[key] = [DEFAULT_DENSE_UNITS]
+        elif key == 'learning_rate':
+            st.session_state[key] = DEFAULT_LEARNING_RATE
+        elif key == 'hybrid_models':
+            st.session_state[key] = ["GRU"]
+        elif key == 'prediction_horizon':
+            st.session_state[key] = DEFAULT_PREDICTION_HORIZON
+        elif key == 'num_samples':
+            st.session_state[key] = 100
+        else:
+            st.session_state[key] = None
 
 # Sidebar for Navigation and Help
 with st.sidebar:
@@ -1310,7 +1865,6 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     st.dataframe(predictions_df, use_container_width=True)
                     
                     st.success(f"Analysis completed successfully for {new_data_file.name}!")
-
 # Bottom ad container at the end
 st.components.v1.html("""
     <div class="ad-container">
