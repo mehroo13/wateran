@@ -490,14 +490,14 @@ def generate_future_predictions(model, last_sequence, scaler, feature_cols, num_
     
     for _ in range(num_steps):
         # Get prediction
-        pred = model.predict(current_sequence.reshape(1, 1, -1))
-        future_predictions.append(pred[0])
+        pred = model.predict(current_sequence.reshape(1, -1, current_sequence.shape[-1]), verbose=0)
+        future_predictions.append(pred[0][0])  # Extract scalar prediction
         
         # Update sequence for next prediction
-        new_sequence = current_sequence[0].copy()
-        new_sequence = np.roll(new_sequence, -1)
-        new_sequence[-1] = pred[0]
-        current_sequence = new_sequence
+        current_sequence = current_sequence.reshape(-1)  # Flatten to 1D
+        current_sequence = np.roll(current_sequence, -1)  # Shift values left
+        current_sequence[-1] = pred[0][0]  # Update last value
+        current_sequence = current_sequence.reshape(1, -1)  # Reshape back to 2D
     
     return np.array(future_predictions)
 
