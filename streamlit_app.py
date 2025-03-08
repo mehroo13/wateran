@@ -26,6 +26,10 @@ import warnings
 import optuna
 from scipy import stats
 
+# Suppress all warnings
+warnings.filterwarnings('ignore')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 # AdMob initialization script
 st.components.v1.html("""
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-app-pub-2264561932019289"
@@ -45,9 +49,6 @@ st.components.v1.html("""
         </script>
     </div>
 """, height=110)
-# Suppress all warnings
-warnings.filterwarnings('ignore')
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # Simplified uncertainty estimation without TFP
 def get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units, 
