@@ -1842,3 +1842,44 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     )
                     
                     st.success(f"Predictions for {new_data_file.name} generated successfully!") 
+
+                    # Create plot of input data
+                    fig = go.Figure()
+                    
+                    # Plot actual discharge data
+                    if output_var in new_df.columns:
+                        fig.add_trace(go.Scatter(
+                            x=dates,
+                            y=new_df[output_var],
+                            name="Discharge",
+                            line=dict(color="#1f77b4")
+                        ))
+                        
+                        fig.update_layout(
+                            title=f"Discharge Data: {output_var} ({new_data_file.name})",
+                            xaxis_title="Date",
+                            yaxis_title=f"{output_var} (m³/s)",
+                            showlegend=True
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Download options
+                        buf = BytesIO()
+                        try:
+                            fig.write_image(buf, format="png")
+                        except ValueError:
+                            fig_alt, ax = plt.subplots()
+                            ax.plot(dates, new_df[output_var], label="Discharge")
+                            ax.legend()
+                            ax.set_title(f"Discharge Data: {output_var}")
+                            fig_alt.savefig(buf, format="png", bbox_inches="tight")
+                        
+                        st.download_button(
+                            f"⬇️ Download Plot ({new_data_file.name})",
+                            buf.getvalue(),
+                            f"discharge_data_{new_data_file.name}.png",
+                            "image/png"
+                        )
+                    else:
+                        st.warning(f"No {output_var} data found in the input file.")
