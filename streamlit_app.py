@@ -23,7 +23,7 @@ import optuna
 from scipy import stats
 
 # Handle ads.txt request
-if 'ads.txt' in st.experimental_get_query_params().get('_stcore_path_', [''])[0].lower():
+if st.experimental_get_query_params().get('_stcore_path_', [''])[0].endswith('ads.txt'):
     st.text('google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0')
     st.stop()
 
