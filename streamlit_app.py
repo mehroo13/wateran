@@ -1821,7 +1821,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                                 mime="image/png"
                             )
                         except Exception as e:
-                            st.warning("Using alternative download method...")
+                            # Silently switch to alternative method without showing warning
                             plt.figure(figsize=(16, 9), dpi=300)
                             if output_var in new_df.columns:
                                 plt.plot(dates, new_df[output_var], 'b-', linewidth=2, label='Actual')
@@ -1843,7 +1843,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                             plt.close()
                             
                             st.download_button(
-                                "⬇️ Download Plot",
+                                "⬇️ Download Plot (PNG)",
                                 img_bytes.getvalue(),
                                 f"discharge_analysis_{new_data_file.name}.png",
                                 mime="image/png"
