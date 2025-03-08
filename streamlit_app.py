@@ -21,14 +21,9 @@ from datetime import datetime, timedelta
 import warnings
 import optuna
 from scipy import stats
-from layout import init_page, show_ads, show_top_ad, show_bottom_ad
 
-# Initialize page configuration
-init_page()
-
-# Initialize ads
-show_ads()
-show_top_ad()
+# Set page config first
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
 # Suppress all warnings
 warnings.filterwarnings('ignore')
@@ -49,6 +44,33 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
+
+# AdMob initialization script
+st.components.v1.html("""
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-app-pub-2264561932019289"
+     crossorigin="anonymous"></script>
+""", height=0)
+
+# Top ad container
+st.components.v1.html("""
+    <div class="ad-container">
+        <ins class="adsbygoogle"
+            style="display:inline-block;width:728px;height:90px"
+            data-ad-client="ca-app-pub-2264561932019289"
+            data-ad-slot="9782119699">
+        </ins>
+        <script>
+            (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+    </div>
+""", height=110)
+
+# Initialize page configuration
+init_page()
+
+# Initialize ads
+show_ads()
+show_top_ad()
 
 # Simplified uncertainty estimation without TFP
 def get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units, 
@@ -625,67 +647,6 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
         raise optuna.exceptions.TrialPruned(f"Trial failed: {str(e)}")
 
 # -------------------- Styling and Streamlit UI --------------------
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
-
-# Theme toggle
-with st.sidebar:
-    st.title("🌊 Wateran")
-    theme = st.selectbox("Theme", ["Light", "Dark"])
-    if theme == "Dark":
-        st.markdown("""
-            <style>
-            .stApp {
-                background-color: #1E1E1E;
-                color: #FFFFFF;
-            }
-            .stButton>button {
-                background-color: #4CAF50;
-                color: white;
-                border-radius: 8px;
-                padding: 10px 20px;
-                font-weight: bold;
-            }
-            .stButton>button:hover {
-                background-color: #45a049;
-            }
-            .metric-box {
-                background-color: #2D2D2D;
-                border-radius: 8px;
-                padding: 15px;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-                text-align: center;
-                margin: 10px 0;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-            <style>
-            .stApp {
-                background-color: #f0f4f8;
-                color: #000000;
-            }
-            .stButton>button {
-                background-color: #007bff;
-                color: white;
-                border-radius: 8px;
-                padding: 10px 20px;
-                font-weight: bold;
-            }
-            .stButton>button:hover {
-                background-color: #0056b3;
-            }
-            .metric-box {
-                background-color: #ffffff;
-                border-radius: 8px;
-                padding: 15px;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-                text-align: center;
-                margin: 10px 0;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
 st.title("🌊 Wateran: Advanced Time Series Prediction")
 st.markdown("**State-of-the-art Time Series Prediction with Uncertainty Quantification**", unsafe_allow_html=True)
 
