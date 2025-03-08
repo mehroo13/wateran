@@ -22,6 +22,42 @@ import warnings
 import optuna
 from scipy import stats
 
+# Add AdMob banner ads HTML
+TOP_BANNER_HTML = """
+<div style="display: flex; justify-content: center; margin: 10px 0;">
+    <ins class="adsbygoogle"
+        style="display:inline-block;width:728px;height:90px"
+        data-ad-client="ca-app-pub-2264561932019289"
+        data-ad-slot="9782119699">
+    </ins>
+    <script>
+        (adsbygoogle = window.adsbygoogle || []).push({});
+    </script>
+</div>
+"""
+
+BOTTOM_BANNER_HTML = """
+<div style="display: flex; justify-content: center; margin: 10px 0;">
+    <ins class="adsbygoogle"
+        style="display:inline-block;width:728px;height:90px"
+        data-ad-client="ca-app-pub-2264561932019289"
+        data-ad-slot="3656766879">
+    </ins>
+    <script>
+        (adsbygoogle = window.adsbygoogle || []).push({});
+    </script>
+</div>
+"""
+
+# Add AdMob script to head
+st.markdown("""
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-app-pub-2264561932019289"
+     crossorigin="anonymous"></script>
+""", unsafe_allow_html=True)
+
+# Display top banner ad
+st.markdown(TOP_BANNER_HTML, unsafe_allow_html=True)
+
 # Suppress all warnings
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -1846,3 +1882,6 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     st.dataframe(predictions_df, use_container_width=True)
                     
                     st.success(f"Analysis completed successfully for {new_data_file.name}!")
+
+# Display bottom banner ad at the end of the page
+st.markdown(BOTTOM_BANNER_HTML, unsafe_allow_html=True)
