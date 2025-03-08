@@ -862,7 +862,7 @@ with col2:
     num_lags = st.number_input("Number of Lags", min_value=1, max_value=10, value=DEFAULT_NUM_LAGS if 'num_lags' not in st.session_state else st.session_state.num_lags, step=1)
     st.session_state.num_lags = num_lags
     
-    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=1, key="epochs")
+    epochs = st.slider("Epochs", 1, 1500, DEFAULT_EPOCHS, step=10, key="epochs")
     batch_size = st.slider("Batch Size", 8, 128, DEFAULT_BATCH_SIZE, step=8, key="batch_size")
     train_split = st.slider("Training Data %", 50, 90, DEFAULT_TRAIN_SPLIT, key="train_split") / 100
     
@@ -1545,8 +1545,17 @@ if any([st.session_state.metrics, st.session_state.fig, st.session_state.train_r
             if st.session_state.model is None:
                 st.error("No model available. Please train or test a model first.")
             else:
-                plot_model(st.session_state.model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
-                st.image(MODEL_PLOT_PATH, caption=f"{model_type} Model Architecture")
+                try:
+                    # Try using plot_model first
+                    plot_model(st.session_state.model, to_file=MODEL_PLOT_PATH, show_shapes=True, show_layer_names=True)
+                    st.image(MODEL_PLOT_PATH, caption=f"{model_type} Model Architecture")
+                except ImportError:
+                    # Fallback to text-based summary
+                    st.write("### Model Architecture Summary")
+                    stringlist = []
+                    st.session_state.model.summary(print_fn=lambda x: stringlist.append(x))
+                    st.text("\n".join(stringlist))
+                    st.info("💡 Tip: To see a graphical visualization, install pydot and graphviz:\n```\npip install pydot\napt-get install graphviz  # Linux\nbrew install graphviz    # macOS\nwinget install graphviz  # Windows\n```")
 
 # New Data Prediction Section
 if os.path.exists(MODEL_WEIGHTS_PATH):
