@@ -1744,72 +1744,87 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     # Create enhanced plot
                     fig = go.Figure()
                     
-                    # Plot predicted discharge with improved styling
-                    fig.add_trace(go.Scatter(
-                        x=dates.values[-len(y_new_pred):],
-                        y=y_new_pred,
-                        name=f"Predicted {output_var}",
-                        line=dict(color="blue", width=2)
-                    ))
+                    if output_var in new_df.columns:
+                        fig.add_trace(go.Scatter(
+                            x=dates,
+                            y=new_df[output_var],
+                            name=f"Discharge ({output_var})",
+                            line=dict(color='rgb(0, 87, 225)', width=2.5),
+                            hovertemplate='<b>Date</b>: %{x}<br><b>Discharge</b>: %{y:.2f} m³/s<br>'
+                        ))
                     
-                    # Add confidence interval
-                    fig.add_trace(go.Scatter(
-                        x=dates.values[-len(y_new_pred):].tolist() + dates.values[-len(y_new_pred):][::-1].tolist(),
-                        y=(y_new_pred + 1.96 * y_new_pred_std[:min_len]).tolist() + 
-                          (y_new_pred - 1.96 * y_new_pred_std[:min_len])[::-1].tolist(),
-                        fill='toself',
-                        fillcolor='rgba(0,0,255,0.1)',
-                        line=dict(color='rgba(0,0,255,0)'),
-                        name='95% Confidence Interval'
-                    ))
-                    
-                    # Update layout with improved styling
                     fig.update_layout(
-                        title=f"Predicted {output_var} ({new_data_file.name})",
-                        xaxis_title="Date",
-                        yaxis_title=f"{output_var} (m³/s)",
-                        yaxis=dict(
-                            range=[0, max(y_new_pred) * 1.1],  # Start from 0 with 10% padding
-                            zeroline=True,
-                            gridcolor='rgba(0,0,0,0.1)',
-                            showgrid=True
+                        title=dict(
+                            text=f"Discharge Data Analysis - {new_data_file.name}",
+                            font=dict(size=24)
                         ),
                         xaxis=dict(
+                            title="Date",
                             showgrid=True,
-                            gridcolor='rgba(0,0,0,0.1)'
+                            gridcolor='rgba(211, 211, 211, 0.4)',
+                            showline=True
                         ),
-                        showlegend=True,
+                        yaxis=dict(
+                            title="Discharge (m³/s)",
+                            showgrid=True,
+                            gridcolor='rgba(211, 211, 211, 0.4)',
+                            showline=True,
+                            rangemode='nonnegative'
+                        ),
                         plot_bgcolor='white',
-                        paper_bgcolor='white',
-                        font=dict(size=12)
+                        height=700,
+                        hovermode='x unified'
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Download buttons with improved error handling
-                    try:
-                        img_bytes = fig.to_image(format="png", scale=2)  # Increased scale for better quality
+                    # Improved download functionality
+                    if output_var in new_df.columns:
+                        try:
+                            # Save plot as PNG with high resolution
+                            img_bytes = BytesIO()
+                            fig.write_image(img_bytes, format='png', width=1920, height=1080, scale=2)
+                            img_bytes.seek(0)
+                            
+                            st.download_button(
+                                "⬇️ Download Plot (High Quality)",
+                                img_bytes.getvalue(),
+                                f"discharge_analysis_{new_data_file.name}.png",
+                                mime="image/png"
+                            )
+                        except Exception as e:
+                            st.warning("Using alternative download method...")
+                            plt.figure(figsize=(16, 9), dpi=300)
+                            plt.plot(dates, new_df[output_var], 'b-', linewidth=2)
+                            plt.title(f"Discharge Data Analysis - {new_data_file.name}")
+                            plt.xlabel("Date")
+                            plt.ylabel("Discharge (m³/s)")
+                            plt.grid(True, alpha=0.3)
+                            plt.xticks(rotation=45)
+                            
+                            img_bytes = BytesIO()
+                            plt.savefig(img_bytes, format='png', dpi=300, bbox_inches='tight')
+                            img_bytes.seek(0)
+                            plt.close()
+                            
+                            st.download_button(
+                                "⬇️ Download Plot",
+                                img_bytes.getvalue(),
+                                f"discharge_analysis_{new_data_file.name}.png",
+                                mime="image/png"
+                            )
+                        
+                        # Data download
+                        download_df = pd.DataFrame({
+                            'Date': dates,
+                            'Discharge (m³/s)': new_df[output_var]
+                        })
+                        csv = download_df.to_csv(index=False)
                         st.download_button(
-                            "⬇️ Download Plot",
-                            img_bytes,
-                            f"predicted_{output_var}_{new_data_file.name}.png",
-                            "image/png"
+                            "⬇️ Download Data (CSV)",
+                            csv,
+                            f"discharge_data_{new_data_file.name}.csv",
+                            "text/csv"
                         )
-                    except Exception as e:
-                        st.warning("Could not generate plot download. You can use the browser's screenshot feature instead.")
-                    
-                    # Download predicted data
-                    predicted_data_df = pd.DataFrame({
-                        "Date": dates.values[-len(y_new_pred):],
-                        f"Predicted_{output_var}": y_new_pred,
-                        "Uncertainty": y_new_pred_std[:min_len]
-                    })
-                    csv_data = predicted_data_df.to_csv(index=False)
-                    st.download_button(
-                        "⬇️ Download Predicted Data",
-                        csv_data,
-                        f"predicted_{output_var}_{new_data_file.name}.csv",
-                        "text/csv"
-                    )
                     
                     st.success(f"Predictions for {new_data_file.name} generated successfully!")
