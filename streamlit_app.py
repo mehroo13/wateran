@@ -22,11 +22,9 @@ import warnings
 import optuna
 from scipy import stats
 
-# Check for ads.txt request
-query_params = st.experimental_get_query_params()
-request_path = query_params.get('_stcore_path_', [''])[0].lower()
-if 'ads.txt' in request_path:
-    st.write('google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0')
+# Handle ads.txt request
+if 'ads.txt' in st.experimental_get_query_params().get('_stcore_path_', [''])[0].lower():
+    st.text('google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0')
     st.stop()
 
 # Set page config first
