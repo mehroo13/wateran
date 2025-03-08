@@ -26,6 +26,30 @@ from scipy import stats
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+# AdMob Configuration
+ADMOB_APP_ID = "ca-app-pub-2264561932019289~4419184202"
+ADMOB_TOP_AD_UNIT_ID = "ca-app-pub-2264561932019289/9782119699"
+ADMOB_BOTTOM_AD_UNIT_ID = "ca-app-pub-2264561932019289/3656766879"
+
+# Add AdMob script to page header
+st.markdown("""
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289"
+     crossorigin="anonymous"></script>
+""", unsafe_allow_html=True)
+
+# Add top AdMob ad container
+st.markdown(f"""
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-2264561932019289"
+         data-ad-slot="{ADMOB_TOP_AD_UNIT_ID}"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+    <script>
+         (adsbygoogle = window.adsbygoogle || []).push({{}});
+    </script>
+""", unsafe_allow_html=True)
+
 # Simplified uncertainty estimation without TFP
 def get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units, 
                          learning_rate, use_attention, use_bidirectional, use_residual, dropout_rate):
@@ -1846,3 +1870,17 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     st.dataframe(predictions_df, use_container_width=True)
                     
                     st.success(f"Analysis completed successfully for {new_data_file.name}!")
+
+# Add bottom AdMob ad container
+st.markdown("---")  # Add a separator line
+st.markdown(f"""
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-2264561932019289"
+         data-ad-slot="{ADMOB_BOTTOM_AD_UNIT_ID}"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+    <script>
+         (adsbygoogle = window.adsbygoogle || []).push({{}});
+    </script>
+""", unsafe_allow_html=True)
