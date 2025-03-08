@@ -22,11 +22,6 @@ import warnings
 import optuna
 from scipy import stats
 
-# Handle ads.txt request - must be before any other Streamlit commands
-if 'ads.txt' in st.experimental_get_query_params().get('_stcore_path_', [''])[0].lower():
-    st.text('google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0')
-    st.stop()
-
 # Set page config first
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
