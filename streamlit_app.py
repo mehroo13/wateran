@@ -26,7 +26,7 @@ from scipy import stats
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-# Set page config as the first Streamlit command
+# Set page config FIRST
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
 # AdMob Configuration
