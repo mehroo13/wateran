@@ -1721,7 +1721,7 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     
                     # Reshape predictions to match dimensions
                     y_new_pred_mean = y_new_pred_mean.reshape(-1, 1)  # Reshape to 2D array
-                    X_new_2d = X_new[:, 0, :]  # Convert 3D to 2D
+                    X_new_2d = X_new[:, 0, :].reshape(y_new_pred_mean.shape[0], -1)  # Ensure matching dimensions
                     
                     # Ensure arrays have matching first dimensions
                     min_len = min(len(y_new_pred_mean), len(X_new_2d))
@@ -1732,64 +1732,63 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     y_new_pred = scaler.inverse_transform(np.hstack([y_new_pred_mean, X_new_2d]))[:, 0]
                     y_new_pred = np.clip(y_new_pred, 0, None)
                     
-                    # Generate future predictions
-                    last_sequence = X_new[-1]
-                    future_predictions = generate_future_predictions(
-                        st.session_state.model,
-                        last_sequence,
-                        scaler,
-                        feature_cols,
-                        prediction_horizon,
-                        selected_inputs,
-                        output_var,
-                        new_var_types,
-                        num_lags
-                    )
-                    
                     # Create results DataFrame
                     dates = new_df[date_col] if date_col != "None" else pd.RangeIndex(len(new_df))
-                    last_date = dates.iloc[-1]
-                    future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=prediction_horizon)
                     
                     new_predictions_df = pd.DataFrame({
                         "Date": dates.values[-len(y_new_pred):],
                         f"Predicted_{output_var}": y_new_pred,
-                        "Uncertainty": y_new_pred_std
+                        "Uncertainty": y_new_pred_std[:min_len]
                     })
                     
-                    future_predictions_df = pd.DataFrame({
-                        "Date": future_dates,
-                        f"Predicted_{output_var}": future_predictions,
-                        "Uncertainty": np.std(future_predictions, axis=0)
-                    })
-                    
-                    st.session_state[f"new_predictions_df_{new_data_file.name}"] = new_predictions_df
-                    st.session_state[f"future_predictions_df_{new_data_file.name}"] = future_predictions_df
-                    
-                    # Create single plot for predicted discharge
+                    # Create enhanced plot
                     fig = go.Figure()
                     
-                    # Plot only the predicted discharge
+                    # Plot predicted discharge with improved styling
                     fig.add_trace(go.Scatter(
                         x=dates.values[-len(y_new_pred):],
                         y=y_new_pred,
                         name=f"Predicted {output_var}",
-                        line=dict(color="blue")
+                        line=dict(color="blue", width=2)
                     ))
                     
+                    # Add confidence interval
+                    fig.add_trace(go.Scatter(
+                        x=dates.values[-len(y_new_pred):].tolist() + dates.values[-len(y_new_pred):][::-1].tolist(),
+                        y=(y_new_pred + 1.96 * y_new_pred_std[:min_len]).tolist() + 
+                          (y_new_pred - 1.96 * y_new_pred_std[:min_len])[::-1].tolist(),
+                        fill='toself',
+                        fillcolor='rgba(0,0,255,0.1)',
+                        line=dict(color='rgba(0,0,255,0)'),
+                        name='95% Confidence Interval'
+                    ))
+                    
+                    # Update layout with improved styling
                     fig.update_layout(
                         title=f"Predicted {output_var} ({new_data_file.name})",
                         xaxis_title="Date",
                         yaxis_title=f"{output_var} (m³/s)",
-                        showlegend=True
+                        yaxis=dict(
+                            range=[0, max(y_new_pred) * 1.1],  # Start from 0 with 10% padding
+                            zeroline=True,
+                            gridcolor='rgba(0,0,0,0.1)',
+                            showgrid=True
+                        ),
+                        xaxis=dict(
+                            showgrid=True,
+                            gridcolor='rgba(0,0,0,0.1)'
+                        ),
+                        showlegend=True,
+                        plot_bgcolor='white',
+                        paper_bgcolor='white',
+                        font=dict(size=12)
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Download buttons
+                    # Download buttons with improved error handling
                     try:
-                        # Save plot as PNG
-                        img_bytes = fig.to_image(format="png")
+                        img_bytes = fig.to_image(format="png", scale=2)  # Increased scale for better quality
                         st.download_button(
                             "⬇️ Download Plot",
                             img_bytes,
@@ -1802,7 +1801,8 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     # Download predicted data
                     predicted_data_df = pd.DataFrame({
                         "Date": dates.values[-len(y_new_pred):],
-                        f"Predicted_{output_var}": y_new_pred
+                        f"Predicted_{output_var}": y_new_pred,
+                        "Uncertainty": y_new_pred_std[:min_len]
                     })
                     csv_data = predicted_data_df.to_csv(index=False)
                     st.download_button(
