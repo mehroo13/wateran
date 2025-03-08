@@ -22,8 +22,10 @@ import warnings
 import optuna
 from scipy import stats
 
-# Serve ads.txt content
-if st.experimental_get_query_params().get('_stcore_path_', [''])[0].lower() == 'ads.txt':
+# Check for ads.txt request
+query_params = st.experimental_get_query_params()
+request_path = query_params.get('_stcore_path_', [''])[0].lower()
+if 'ads.txt' in request_path:
     st.write('google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0')
     st.stop()
 
