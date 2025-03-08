@@ -26,10 +26,31 @@ from scipy import stats
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+# Add proper HTML structure with AdSense verification
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+
+st.markdown("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="google-adsense-account" content="ca-pub-2264561932019289">
+        <title>Wateran: Advanced Time Series Prediction</title>
+    </head>
+    </html>
+""", unsafe_allow_html=True)
+
 # AdSense Configuration
 def serve_ads_txt():
-    """Serve ads.txt content"""
-    if 'ads.txt' in st.experimental_get_query_params() or st.experimental_get_query_params().get('get') == ['ads.txt']:
+    """Serve ads.txt content for both /ads.txt and /?ads.txt requests"""
+    query_params = st.experimental_get_query_params()
+    request_path = st.experimental_get_query_params().get('_stcore_path_', [None])[0]
+    
+    # Check for both /ads.txt and /?ads.txt requests
+    if ('ads.txt' in query_params or 
+        (request_path and request_path.endswith('ads.txt')) or 
+        (request_path and request_path == 'ads.txt')):
         st.text("google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0")
         st.stop()
 
