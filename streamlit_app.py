@@ -26,9 +26,14 @@ from scipy import stats
 query_params = st.experimental_get_query_params()
 request_path = query_params.get('_stcore_path_', [''])[0]
 
-# Check both query parameters and direct path for ads.txt
-if 'ads.txt' in query_params or request_path == 'ads.txt' or request_path.endswith('/ads.txt'):
-    st.text("google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0")
+# Check for ads.txt request in multiple ways
+if ('ads.txt' in query_params or 
+    request_path == 'ads.txt' or 
+    request_path == '/ads.txt' or 
+    request_path.endswith('/ads.txt') or 
+    request_path.endswith('ads.txt')):
+    st.set_page_config(page_title="ads.txt", layout="wide")
+    st.markdown("google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0", unsafe_allow_html=False)
     st.stop()
 
 # Set page config - Must be the first Streamlit command after ads.txt check
