@@ -26,6 +26,16 @@ from scipy import stats
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+# AdSense Configuration
+def serve_ads_txt():
+    """Serve ads.txt content"""
+    if 'ads.txt' in st.experimental_get_query_params() or st.experimental_get_query_params().get('get') == ['ads.txt']:
+        st.text("google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0")
+        st.stop()
+
+# Check for ads.txt request first
+serve_ads_txt()
+
 # Simplified uncertainty estimation without TFP
 def get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units, 
                          learning_rate, use_attention, use_bidirectional, use_residual, dropout_rate):
@@ -603,12 +613,23 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
 # -------------------- Styling and Streamlit UI --------------------
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
 
-# Add Google AdSense verification meta tag
+# Add proper HTML structure with AdSense verification
 st.markdown("""
+    <!DOCTYPE html>
+    <html>
     <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="google-adsense-account" content="ca-pub-2264561932019289">
+        <title>Wateran: Advanced Time Series Prediction</title>
     </head>
+    </html>
 """, unsafe_allow_html=True)
+
+# Serve ads.txt content
+if 'ads.txt' in st.experimental_get_query_params():
+    st.write("google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0")
+    st.stop()
 
 # Theme toggle
 with st.sidebar:
