@@ -1275,10 +1275,34 @@ with col2:
                 )
                 
                 # Inverse transform predictions
-                y_train_pred = scaler.inverse_transform(np.hstack([y_train_pred_mean, X_train[:, 0, :]]))[:, 0]
-                y_test_pred = scaler.inverse_transform(np.hstack([y_test_pred_mean, X_test[:, 0, :]]))[:, 0]
-                y_train_actual = scaler.inverse_transform(np.hstack([y_train, X_train[:, 0, :]]))[:, 0]
-                y_test_actual = scaler.inverse_transform(np.hstack([y_test, X_test[:, 0, :]]))[:, 0]
+                y_train_pred_mean = y_train_pred_mean.reshape(-1, 1)
+                y_test_pred_mean = y_test_pred_mean.reshape(-1, 1)
+                y_train = y_train.reshape(-1, 1)
+                y_test = y_test.reshape(-1, 1)
+                
+                # Ensure all arrays have matching first dimensions
+                min_train_len = min(len(y_train_pred_mean), len(X_train))
+                min_test_len = min(len(y_test_pred_mean), len(X_test))
+                
+                y_train_pred = scaler.inverse_transform(np.hstack([
+                    y_train_pred_mean[:min_train_len], 
+                    X_train[:min_train_len, 0, :]
+                ]))[:, 0]
+                
+                y_test_pred = scaler.inverse_transform(np.hstack([
+                    y_test_pred_mean[:min_test_len], 
+                    X_test[:min_test_len, 0, :]
+                ]))[:, 0]
+                
+                y_train_actual = scaler.inverse_transform(np.hstack([
+                    y_train[:min_train_len], 
+                    X_train[:min_train_len, 0, :]
+                ]))[:, 0]
+                
+                y_test_actual = scaler.inverse_transform(np.hstack([
+                    y_test[:min_test_len], 
+                    X_test[:min_test_len, 0, :]
+                ]))[:, 0]
                 
                 # Clip predictions to non-negative values
                 y_train_pred, y_test_pred = np.clip(y_train_pred, 0, None), np.clip(y_test_pred, 0, None)
