@@ -626,6 +626,12 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
             restore_best_weights=True
         )
         
+        # Ensure validation data has correct shape
+        if len(X_val.shape) == 2:
+            X_val = X_val.reshape((X_val.shape[0], 1, X_val.shape[1]))
+        if len(y_val.shape) == 1:
+            y_val = y_val.reshape(-1, 1)
+        
         history = model.fit(
             X_train, y_train,
             validation_data=(X_val, y_val),
@@ -1209,6 +1215,16 @@ with col2:
                             y_val = y_train_subset[-val_size:]
                             X_train_opt = X_train_subset[:-val_size]
                             y_train_opt = y_train_subset[:-val_size]
+                            
+                            # Ensure data has correct shape
+                            if len(X_train_opt.shape) == 2:
+                                X_train_opt = X_train_opt.reshape((X_train_opt.shape[0], 1, X_train_opt.shape[1]))
+                            if len(y_train_opt.shape) == 1:
+                                y_train_opt = y_train_opt.reshape(-1, 1)
+                            if len(X_val.shape) == 2:
+                                X_val = X_val.reshape((X_val.shape[0], 1, X_val.shape[1]))
+                            if len(y_val.shape) == 1:
+                                y_val = y_val.reshape(-1, 1)
                             
                             # Create study with faster sampler
                             study = optuna.create_study(
