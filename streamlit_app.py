@@ -21,9 +21,14 @@ from datetime import datetime, timedelta
 import warnings
 import optuna
 from scipy import stats
+from layout import init_page, show_ads, show_top_ad, show_bottom_ad
 
-# Set page config first
-st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+# Initialize page configuration
+init_page()
+
+# Initialize ads
+show_ads()
+show_top_ad()
 
 # Suppress all warnings
 warnings.filterwarnings('ignore')
@@ -44,26 +49,6 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
-# AdMob initialization script
-st.components.v1.html("""
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-app-pub-2264561932019289"
-     crossorigin="anonymous"></script>
-""", height=0)
-
-# Top ad container
-st.components.v1.html("""
-    <div class="ad-container">
-        <ins class="adsbygoogle"
-            style="display:inline-block;width:728px;height:90px"
-            data-ad-client="ca-app-pub-2264561932019289"
-            data-ad-slot="9782119699">
-        </ins>
-        <script>
-            (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-""", height=110)
 
 # Simplified uncertainty estimation without TFP
 def get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units, 
@@ -1886,16 +1871,5 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     
                     st.success(f"Analysis completed successfully for {new_data_file.name}!")
 
-# Bottom ad container (at the very end)
-st.components.v1.html("""
-    <div class="ad-container">
-        <ins class="adsbygoogle"
-            style="display:inline-block;width:728px;height:90px"
-            data-ad-client="ca-app-pub-2264561932019289"
-            data-ad-slot="3656766879">
-        </ins>
-        <script>
-            (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-""", height=110)
+# Show bottom ad at the end
+show_bottom_ad()
