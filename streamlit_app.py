@@ -30,26 +30,6 @@ from scipy import stats
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-# AdMob initialization script
-st.components.v1.html("""
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-app-pub-2264561932019289"
-     crossorigin="anonymous"></script>
-""", height=0)
-
-# Top ad container
-st.components.v1.html("""
-    <div class="ad-container">
-        <ins class="adsbygoogle"
-            style="display:inline-block;width:728px;height:90px"
-            data-ad-client="ca-app-pub-2264561932019289"
-            data-ad-slot="9782119699">
-        </ins>
-        <script>
-            (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-""", height=110)
-
 # Simplified uncertainty estimation without TFP
 def get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units, 
                          learning_rate, use_attention, use_bidirectional, use_residual, dropout_rate):
@@ -1877,6 +1857,26 @@ st.components.v1.html("""
             style="display:inline-block;width:728px;height:90px"
             data-ad-client="ca-app-pub-2264561932019289"
             data-ad-slot="3656766879">
+        </ins>
+        <script>
+            (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+    </div>
+""", height=110)
+
+# AdMob initialization script
+st.components.v1.html("""
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-app-pub-2264561932019289"
+     crossorigin="anonymous"></script>
+""", height=0)
+
+# Top ad container
+st.components.v1.html("""
+    <div class="ad-container">
+        <ins class="adsbygoogle"
+            style="display:inline-block;width:728px;height:90px"
+            data-ad-client="ca-app-pub-2264561932019289"
+            data-ad-slot="9782119699">
         </ins>
         <script>
             (adsbygoogle = window.adsbygoogle || []).push({});
