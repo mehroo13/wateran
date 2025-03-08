@@ -22,19 +22,10 @@ import warnings
 import optuna
 from scipy import stats
 
-# Enhanced ads.txt handling
-def serve_ads_txt():
-    """Serve the ads.txt content when requested."""
-    query_params = st.experimental_get_query_params()
-    request_path = query_params.get('_stcore_path_', [''])[0].lower()
-    
-    # Check if this is an ads.txt request
-    if 'ads.txt' in request_path:
-        st.text('google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0')
-        st.stop()
-
-# Call ads.txt handler before any other Streamlit commands
-serve_ads_txt()
+# Serve ads.txt content
+if st.experimental_get_query_params().get('_stcore_path_', [''])[0].lower() == 'ads.txt':
+    st.write('google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0')
+    st.stop()
 
 # Set page config first
 st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
