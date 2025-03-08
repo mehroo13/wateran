@@ -26,51 +26,6 @@ from scipy import stats
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-def main():
-    # Set page config first
-    st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
-
-    # AdMob Configuration
-    ADMOB_APP_ID = "ca-pub-2264561932019289~4419184202"
-    ADMOB_TOP_AD_UNIT_ID = "ca-pub-2264561932019289/9782119699"
-    ADMOB_BOTTOM_AD_UNIT_ID = "ca-pub-2264561932019289/3656766879"
-
-    # Add AdMob script to page header
-    st.markdown("""
-        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2264561932019289"
-         crossorigin="anonymous"></script>
-    """, unsafe_allow_html=True)
-
-    # Add custom styling for ads
-    st.markdown("""
-        <style>
-        .ad-container {
-            width: 100%;
-            max-width: 1200px;
-            margin: 20px auto;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # Add top AdMob ad container
-    st.markdown("""
-        <div class="ad-container">
-            <ins class="adsbygoogle"
-                 style="display:block"
-                 data-ad-client="ca-pub-2264561932019289"
-                 data-ad-slot="9782119699"
-                 data-ad-format="auto"
-                 data-full-width-responsive="true"></ins>
-            <script>
-                 (adsbygoogle = window.adsbygoogle || []).push({});
-            </script>
-        </div>
-    """, unsafe_allow_html=True)
-
 # Simplified uncertainty estimation without TFP
 def get_uncertainty_model(input_shape, model_type, layers, units, dense_layers, dense_units, 
                          learning_rate, use_attention, use_bidirectional, use_residual, dropout_rate):
@@ -1891,20 +1846,3 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     st.dataframe(predictions_df, use_container_width=True)
                     
                     st.success(f"Analysis completed successfully for {new_data_file.name}!")
-# Add bottom AdMob ad container
-    st.markdown("""
-        <div class="ad-container">
-            <ins class="adsbygoogle"
-                 style="display:block"
-                 data-ad-client="ca-pub-2264561932019289"
-                 data-ad-slot="3656766879"
-                 data-ad-format="auto"
-                 data-full-width-responsive="true"></ins>
-            <script>
-                 (adsbygoogle = window.adsbygoogle || []).push({});
-            </script>
-        </div>
-    """, unsafe_allow_html=True)
-
-if __name__ == "__main__":
-    main()
