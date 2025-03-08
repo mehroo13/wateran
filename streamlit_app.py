@@ -393,7 +393,9 @@ def engineer_features(df, feature_cols, output_var, date_col=None):
                 engineered_df['day'] = engineered_df[date_col].dt.day
                 engineered_df['month'] = engineered_df[date_col].dt.month
                 engineered_df['day_of_week'] = engineered_df[date_col].dt.dayofweek
-                engineered_df['is_weekend'] = engineered_df['day_of_week'].isin([5, 6]).astype(int)
+                # Fix the is_weekend calculation
+                weekend_mask = engineered_df['day_of_week'].isin([5, 6])
+                engineered_df['is_weekend'] = weekend_mask.astype(int)
             except Exception as e:
                 print(f"Time feature engineering error: {str(e)}")
                 pass
@@ -1250,6 +1252,17 @@ with col2:
                             # Run optimization with progress bar
                             progress_bar = st.progress(0)
                             for i in range(8):
+                                # Ensure predictions have correct shape before inverse transform
+                                y_val_pred_mean = y_val_pred_mean.reshape(-1, 1)
+                                X_val_reshaped = X_val[:, 0, :].reshape(y_val_pred_mean.shape[0], -1)
+                                
+                                # Ensure arrays have matching first dimensions
+                                min_len = min(len(y_val_pred_mean), len(X_val_reshaped))
+                                y_val_pred = scaler.inverse_transform(np.hstack([
+                                    y_val_pred_mean[:min_len],
+                                    X_val_reshaped[:min_len]
+                                ]))[:, 0]
+                                
                                 study.optimize(lambda trial: objective(
                                     trial, 
                                     X_train_opt, 
