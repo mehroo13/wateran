@@ -879,31 +879,31 @@ with col2:
         st.session_state.dropout_rate = dropout_rate
         
         if model_type == "PINN":
-            with st.expander("PINN Configuration", expanded=True):
-                st.markdown("**Physics Constraints**")
-                physics_weight = st.slider(
-                    "Physics Loss Weight",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=DEFAULT_PHYSICS_WEIGHT,
-                    step=0.01,
-                    help="Weight for physics-based loss term"
-                )
-                st.session_state.physics_weight = physics_weight
-                
-                use_mass_conservation = st.checkbox(
-                    "Use Mass Conservation",
-                    value=st.session_state.use_mass_conservation,
-                    help="Enforce mass conservation constraint"
-                )
-                st.session_state.use_mass_conservation = use_mass_conservation
-                
-                use_smoothness = st.checkbox(
-                    "Use Smoothness Constraint",
-                    value=st.session_state.use_smoothness,
-                    help="Enforce smoothness constraint"
-                )
-                st.session_state.use_smoothness = use_smoothness
+            st.markdown("### PINN Configuration")
+            st.markdown("**Physics Constraints**")
+            physics_weight = st.slider(
+                "Physics Loss Weight",
+                min_value=0.0,
+                max_value=1.0,
+                value=DEFAULT_PHYSICS_WEIGHT,
+                step=0.01,
+                help="Weight for physics-based loss term"
+            )
+            st.session_state.physics_weight = physics_weight
+            
+            use_mass_conservation = st.checkbox(
+                "Use Mass Conservation",
+                value=st.session_state.use_mass_conservation,
+                help="Enforce mass conservation constraint"
+            )
+            st.session_state.use_mass_conservation = use_mass_conservation
+            
+            use_smoothness = st.checkbox(
+                "Use Smoothness Constraint",
+                value=st.session_state.use_smoothness,
+                help="Enforce smoothness constraint"
+            )
+            st.session_state.use_smoothness = use_smoothness
         
         if model_type == "Hybrid":
             valid_options = ["GRU", "LSTM", "RNN", "PINN"]
