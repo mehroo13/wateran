@@ -1507,8 +1507,8 @@ if st.session_state.feature_cols:
                     st.info("Continuing with basic features only.")
             
             # Scale data
-            scaler = st.session_state.scaler
-            scaled = scaler.transform(processed_df[feature_cols + [st.session_state.output_var]])
+            scaler = MinMaxScaler()  # Create a new scaler for CV
+            scaled = scaler.fit_transform(processed_df[feature_cols + [st.session_state.output_var]])
             X, y = scaled[:, :-1], scaled[:, -1]
             X = X.reshape((X.shape[0], 1, X.shape[1]))
             y = y.reshape(-1, 1)
@@ -1555,13 +1555,29 @@ if st.session_state.feature_cols:
                     st.session_state.num_samples
                 )
                 
-                # Inverse transform predictions
-                y_val_pred = scaler.inverse_transform(np.hstack([y_val_pred_mean, X_val[:, 0, :]]))[:, 0]
-                y_val_actual = scaler.inverse_transform(np.hstack([y_val, X_val[:, 0, :]]))[:, 0]
+                # Reshape predictions and validation data
+                y_val_pred_mean = y_val_pred_mean.reshape(-1, 1)
+                X_val_features = X_val[:, 0, :]
+                
+                # Ensure arrays have matching first dimensions
+                min_len = min(len(y_val_pred_mean), len(X_val_features))
+                y_val_pred_mean = y_val_pred_mean[:min_len]
+                X_val_features = X_val_features[:min_len]
+                y_val = y_val[:min_len]
+                
+                # Stack arrays and inverse transform
+                stacked_pred = np.hstack([y_val_pred_mean, X_val_features])
+                stacked_actual = np.hstack([y_val, X_val_features])
+                
+                y_val_pred = scaler.inverse_transform(stacked_pred)[:, 0]
+                y_val_actual = scaler.inverse_transform(stacked_actual)[:, 0]
                 
                 # Calculate metrics
                 for metric in st.session_state.selected_metrics:
                     cv_metrics[metric].append(all_metrics_dict[metric](y_val_actual, y_val_pred))
+                
+                # Clean up
+                tf.keras.backend.clear_session()
             
             # Calculate mean metrics
             st.session_state.cv_metrics = {m: np.mean(cv_metrics[m]) for m in st.session_state.selected_metrics}
