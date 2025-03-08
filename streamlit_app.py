@@ -33,7 +33,7 @@ if ('ads.txt' in query_params or
     request_path.endswith('/ads.txt') or 
     request_path.endswith('ads.txt')):
     st.set_page_config(page_title="ads.txt", layout="wide")
-    st.markdown("google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0", unsafe_allow_html=False)
+    st.text("google.com, pub-2264561932019289, DIRECT, f08c47fec0942fa0")
     st.stop()
 
 # Set page config - Must be the first Streamlit command after ads.txt check
