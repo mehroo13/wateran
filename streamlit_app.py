@@ -592,13 +592,13 @@ def evaluate_model_advanced(model, X_test, y_test, scaler, feature_cols):
 # -------------------- Advanced Hyperparameter Optimization --------------------
 def objective(trial, X_train, y_train, X_val, y_val, model_type):
     """Objective function for Optuna hyperparameter optimization."""
-    # Define hyperparameters to optimize
+    # Define hyperparameters to optimize with more focused ranges
     hp = {
-        'learning_rate': trial.suggest_loguniform('learning_rate', 1e-5, 1e-2),
-        'num_layers': trial.suggest_int('num_layers', 1, 5),
-        'units': trial.suggest_int('units', 32, 256),
-        'dropout_rate': trial.suggest_uniform('dropout_rate', 0.1, 0.5),
-        'batch_size': trial.suggest_categorical('batch_size', [16, 32, 64, 128])
+        'learning_rate': trial.suggest_loguniform('learning_rate', 1e-4, 1e-2),  # Narrowed range
+        'num_layers': trial.suggest_int('num_layers', 1, 3),  # Reduced max layers
+        'units': trial.suggest_int('units', 32, 128),  # Reduced max units
+        'dropout_rate': trial.suggest_uniform('dropout_rate', 0.1, 0.3),  # Narrowed range
+        'batch_size': trial.suggest_categorical('batch_size', [32, 64])  # Reduced options
     }
     
     # Build and train model
@@ -607,19 +607,19 @@ def objective(trial, X_train, y_train, X_val, y_val, model_type):
         model_type=model_type,
         layers=hp['num_layers'],
         units=[hp['units']] * hp['num_layers'],
-        dense_layers=2,
-        dense_units=[64, 32],
+        dense_layers=1,  # Simplified architecture
+        dense_units=[32],
         learning_rate=hp['learning_rate'],
         dropout_rate=hp['dropout_rate']
     )
     
-    # Train model
+    # Train model with reduced epochs and earlier stopping
     history = model.fit(
         X_train, y_train,
         validation_data=(X_val, y_val),
-        epochs=50,
+        epochs=20,  # Reduced epochs
         batch_size=hp['batch_size'],
-        callbacks=[EarlyStopping(patience=10)],
+        callbacks=[EarlyStopping(patience=5)],  # Reduced patience
         verbose=0
     )
     
@@ -1162,23 +1162,44 @@ with col2:
                 if "X_train" not in st.session_state or "y_train" not in st.session_state:
                     st.error("Please train the model first to generate training data.")
                 else:
-                    with st.spinner("Optimizing hyperparameters..."):
+                    with st.spinner("Optimizing hyperparameters... This may take a few minutes."):
                         # Create validation split
                         val_size = int(len(st.session_state.X_train) * 0.2)
-                        X_val = st.session_state.X_train[-val_size:]
-                        y_val = st.session_state.y_train[-val_size:]
-                        X_train_opt = st.session_state.X_train[:-val_size]
-                        y_train_opt = st.session_state.y_train[:-val_size]
                         
-                        study = optuna.create_study(direction='minimize')
-                        study.optimize(lambda trial: objective(
-                            trial, 
-                            X_train_opt, 
-                            y_train_opt, 
-                            X_val, 
-                            y_val, 
-                            st.session_state.model_type
-                        ), n_trials=10)
+                        # Use a subset of data for faster optimization
+                        max_samples = 1000  # Limit number of samples
+                        if len(st.session_state.X_train) > max_samples:
+                            step = len(st.session_state.X_train) // max_samples
+                            X_train_subset = st.session_state.X_train[::step]
+                            y_train_subset = st.session_state.y_train[::step]
+                        else:
+                            X_train_subset = st.session_state.X_train
+                            y_train_subset = st.session_state.y_train
+                        
+                        val_size = int(len(X_train_subset) * 0.2)
+                        X_val = X_train_subset[-val_size:]
+                        y_val = y_train_subset[-val_size:]
+                        X_train_opt = X_train_subset[:-val_size]
+                        y_train_opt = y_train_subset[:-val_size]
+                        
+                        # Create study with faster sampler
+                        study = optuna.create_study(
+                            direction='minimize',
+                            sampler=optuna.samplers.TPESampler(n_startup_trials=5)
+                        )
+                        
+                        # Run optimization with progress bar
+                        progress_bar = st.progress(0)
+                        for i in range(8):  # Reduced number of trials
+                            study.optimize(lambda trial: objective(
+                                trial, 
+                                X_train_opt, 
+                                y_train_opt, 
+                                X_val, 
+                                y_val, 
+                                st.session_state.model_type
+                            ), n_trials=1)
+                            progress_bar.progress((i + 1) / 8)
                         
                         st.write("Best hyperparameters:", study.best_params)
                         st.write("Best validation loss:", study.best_value)
