@@ -1,4 +1,8 @@
 import streamlit as st
+
+# Set page config at the very start
+st.set_page_config(page_title="Wateran", page_icon="🌊", layout="wide")
+
 import pandas as pd
 import numpy as np
 import tensorflow as tf
