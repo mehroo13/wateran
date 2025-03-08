@@ -1735,27 +1735,52 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                     # Create results DataFrame
                     dates = new_df[date_col] if date_col != "None" else pd.RangeIndex(len(new_df))
                     
-                    new_predictions_df = pd.DataFrame({
-                        "Date": dates.values[-len(y_new_pred):],
-                        f"Predicted_{output_var}": y_new_pred,
+                    # Create predictions DataFrame with proper date handling
+                    predictions_df = pd.DataFrame({
+                        "Date": dates,
+                        "Actual_Discharge": new_df[output_var] if output_var in new_df.columns else None,
+                        "Predicted_Discharge": y_new_pred,
                         "Uncertainty": y_new_pred_std[:min_len]
                     })
                     
                     # Create enhanced plot
                     fig = go.Figure()
                     
+                    # Plot actual discharge if available
                     if output_var in new_df.columns:
                         fig.add_trace(go.Scatter(
                             x=dates,
                             y=new_df[output_var],
-                            name=f"Discharge ({output_var})",
-                            line=dict(color='rgb(0, 87, 225)', width=2.5),
-                            hovertemplate='<b>Date</b>: %{x}<br><b>Discharge</b>: %{y:.2f} m³/s<br>'
+                            name="Actual Discharge",
+                            line=dict(color='blue', width=2),
+                            hovertemplate='<b>Date</b>: %{x}<br><b>Actual Discharge</b>: %{y:.2f} m³/s<br>'
                         ))
                     
+                    # Plot predicted discharge
+                    fig.add_trace(go.Scatter(
+                        x=dates[-len(y_new_pred):],
+                        y=y_new_pred,
+                        name="Predicted Discharge",
+                        line=dict(color='red', width=2),
+                        hovertemplate='<b>Date</b>: %{x}<br><b>Predicted Discharge</b>: %{y:.2f} m³/s<br>'
+                    ))
+                    
+                    # Add confidence interval
+                    fig.add_trace(go.Scatter(
+                        x=dates[-len(y_new_pred):].tolist() + dates[-len(y_new_pred):][::-1].tolist(),
+                        y=(y_new_pred + 1.96 * y_new_pred_std[:min_len]).tolist() + 
+                          (y_new_pred - 1.96 * y_new_pred_std[:min_len])[::-1].tolist(),
+                        fill='toself',
+                        fillcolor='rgba(255,0,0,0.2)',
+                        line=dict(color='rgba(255,0,0,0)'),
+                        name='95% Confidence Interval',
+                        showlegend=True
+                    ))
+                    
+                    # Update layout
                     fig.update_layout(
                         title=dict(
-                            text=f"Discharge Data Analysis - {new_data_file.name}",
+                            text=f"Discharge Analysis - {new_data_file.name}",
                             font=dict(size=24)
                         ),
                         xaxis=dict(
@@ -1776,18 +1801,21 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         hovermode='x unified'
                     )
                     
+                    # Display the plot
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Improved download functionality
-                    if output_var in new_df.columns:
+                    # Create download buttons
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Plot download
                         try:
-                            # Save plot as PNG with high resolution
                             img_bytes = BytesIO()
                             fig.write_image(img_bytes, format='png', width=1920, height=1080, scale=2)
                             img_bytes.seek(0)
                             
                             st.download_button(
-                                "⬇️ Download Plot (High Quality)",
+                                "⬇️ Download Plot (PNG)",
                                 img_bytes.getvalue(),
                                 f"discharge_analysis_{new_data_file.name}.png",
                                 mime="image/png"
@@ -1795,11 +1823,18 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                         except Exception as e:
                             st.warning("Using alternative download method...")
                             plt.figure(figsize=(16, 9), dpi=300)
-                            plt.plot(dates, new_df[output_var], 'b-', linewidth=2)
-                            plt.title(f"Discharge Data Analysis - {new_data_file.name}")
+                            if output_var in new_df.columns:
+                                plt.plot(dates, new_df[output_var], 'b-', linewidth=2, label='Actual')
+                            plt.plot(dates[-len(y_new_pred):], y_new_pred, 'r-', linewidth=2, label='Predicted')
+                            plt.fill_between(dates[-len(y_new_pred):],
+                                           y_new_pred - 1.96 * y_new_pred_std[:min_len],
+                                           y_new_pred + 1.96 * y_new_pred_std[:min_len],
+                                           color='red', alpha=0.2, label='95% CI')
+                            plt.title(f"Discharge Analysis - {new_data_file.name}")
                             plt.xlabel("Date")
                             plt.ylabel("Discharge (m³/s)")
                             plt.grid(True, alpha=0.3)
+                            plt.legend()
                             plt.xticks(rotation=45)
                             
                             img_bytes = BytesIO()
@@ -1813,18 +1848,19 @@ if os.path.exists(MODEL_WEIGHTS_PATH):
                                 f"discharge_analysis_{new_data_file.name}.png",
                                 mime="image/png"
                             )
-                        
+                    
+                    with col2:
                         # Data download
-                        download_df = pd.DataFrame({
-                            'Date': dates,
-                            'Discharge (m³/s)': new_df[output_var]
-                        })
-                        csv = download_df.to_csv(index=False)
+                        csv = predictions_df.to_csv(index=False)
                         st.download_button(
-                            "⬇️ Download Data (CSV)",
+                            "⬇️ Download Predictions (CSV)",
                             csv,
-                            f"discharge_data_{new_data_file.name}.csv",
+                            f"discharge_predictions_{new_data_file.name}.csv",
                             "text/csv"
                         )
                     
-                    st.success(f"Predictions for {new_data_file.name} generated successfully!")
+                    # Display predictions table
+                    st.markdown("### Prediction Results")
+                    st.dataframe(predictions_df, use_container_width=True)
+                    
+                    st.success(f"Analysis completed successfully for {new_data_file.name}!")
